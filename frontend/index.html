@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity MLX - Local Agent Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script defer src="/static/app.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- New Clean Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <button id="new-chat-btn" class="new-chat-button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New chat
+                </button>
+            </div>
+
+            <div class="sidebar-nav">
+                <div class="nav-section">
+                    <h3>Recent</h3>
+                    <div id="recent-chats-list">
+                        <!-- dynamically populated -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot disconnected" id="connection-dot"></span>
+                    <span id="connection-text">Connecting...</span>
+                </div>
+                <button id="settings-btn" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Settings</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Panel -->
+        <main class="chat-panel">
+            <header class="chat-header">
+                <div class="header-info">
+                    <h2>Antigravity MLX</h2>
+                    <p id="active-model-header">No active model loaded.</p>
+                </div>
+            </header>
+
+            <div class="chat-history" id="chat-history">
+                <!-- Welcome Screen -->
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-hero">
+                        <h2>Hello, I'm Antigravity MLX.</h2>
+                        <p>How can I help you today?</p>
+                    </div>
+
+                    <div class="welcome-suggestions">
+                        <div class="suggestions-grid">
+                            <button class="suggestion-card" data-prompt="Create a python script called hello.py that writes the Fibonacci sequence to a file, then execute it.">
+                                <h4>Develop & Run Code</h4>
+                            </button>
+                            <button class="suggestion-card" data-prompt="Search the web for the latest releases or news of Apple MLX framework and summarize.">
+                                <h4>Search the Web</h4>
+                            </button>
+                            <button class="suggestion-card" data-prompt="List the files in the workspace and explain what they are.">
+                                <h4>Inspect Directory</h4>
+                            </button>
+                            <button class="suggestion-card" data-prompt="Read the file backend/tools.py and explain how the web_fetch tool works.">
+                                <h4>Explain Code</h4>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Typing indicator / agent progress -->
+            <div class="agent-progress-overlay hidden" id="agent-progress-bar">
+                <div class="pulse-container">
+                    <span class="pulse-dot"></span>
+                    <span class="pulse-dot"></span>
+                    <span class="pulse-dot"></span>
+                </div>
+                <span id="agent-progress-text">Agent is running...</span>
+            </div>
+
+            <!-- Chat Input -->
+            <footer class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea id="chat-input" placeholder="Ask anything..." rows="1" disabled></textarea>
+                    
+                    <button id="siri-btn" title="Toggle Siri Mode (TTS)" class="siri-off">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path class="siri-wave" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                    </button>
+                    
+                    <button id="mic-btn" title="Dictate Voice">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </button>
+                    <button id="stop-btn" class="hidden" title="Stop Agent">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="6" y="6" width="12" height="12"></rect>
+                        </svg>
+                    </button>
+                    <button id="send-btn" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+            </footer>
+        </main>
+
+        <!-- Right Sidebar for Project Overview -->
+        <aside class="right-sidebar">
+            <header class="right-sidebar-header">
+                <h3>Project Overview</h3>
+                <button id="refresh-overview-btn" title="Refresh" class="icon-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+            </header>
+            <div class="right-sidebar-content markdown-body" id="project-overview-content">
+                <div class="loading-placeholder">Loading project overview...</div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="close-modal-btn" class="close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Workspace Config -->
+                <div class="settings-group">
+                    <h3>Workspace Path</h3>
+                    <div class="input-group">
+                        <input type="text" id="workspace-input" placeholder="e.g. /path/to/project" autocomplete="off">
+                        <button id="update-workspace-btn">Save</button>
+                    </div>
+                    <div class="info-note" id="workspace-display">Active: Loading...</div>
+                </div>
+
+                <!-- Model Selection -->
+                <div class="settings-group">
+                    <h3>Local Models</h3>
+                    <div class="model-select-container">
+                        <label for="model-selector">Active Model</label>
+                        <select id="model-selector">
+                            <option value="">-- Select a local model --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="model-list-header">
+                        <h4>Available Models</h4>
+                    </div>
+                    <div class="recommended-models" id="recommended-models-list">
+                        <div class="loading-placeholder">Loading model list...</div>
+                    </div>
+
+                    <div class="custom-download">
+                        <h4>Download custom HF Model</h4>
+                        <div class="input-group">
+                            <input type="text" id="custom-model-input" placeholder="org/repo-mlx-format" autocomplete="off">
+                            <button id="download-model-btn">Download</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gmail Config -->
+                <div class="settings-group">
+                    <h3>Gmail Connection</h3>
+                    <div class="model-select-container">
+                        <input type="text" id="gmail-email-input" placeholder="yourname@gmail.com" autocomplete="off">
+                    </div>
+                    <div class="model-select-container">
+                        <input type="password" id="gmail-password-input" placeholder="16-character App Password" autocomplete="off">
+                    </div>
+                    <button id="save-gmail-btn" style="width:100%; margin-top:8px;">Save Credentials</button>
+                    <div class="info-note" id="gmail-display">Gmail: Loading...</div>
+                </div>
+
+                <!-- Parameters -->
+                <div class="settings-group">
+                    <h3>Parameters</h3>
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span>Temperature</span>
+                            <span id="temp-val">0.2</span>
+                        </div>
+                        <input type="range" id="temp-slider" min="0" max="1" step="0.05" value="0.2">
+                    </div>
+                </div>
+
+                <!-- Hardware Stats -->
+                <div class="settings-group stats-section">
+                    <h3>System Resources</h3>
+                    <div class="stat-item">
+                        <div class="stat-label">
+                            <span>CPU Load</span>
+                            <span id="cpu-stat">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar" id="cpu-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">
+                            <span>RAM Utilization</span>
+                            <span id="ram-stat">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar" id="ram-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="info-note" id="stats-cores-display">Cores: Loading...</div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</body>
+</html>

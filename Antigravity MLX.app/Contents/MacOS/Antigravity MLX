@@ -1,0 +1,10 @@
+#!/bin/bash
+DIR="/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent"
+cd "$DIR"
+
+# Source the virtual environment
+source .venv/bin/activate
+
+# Execute the application
+# We use exec so the python process replaces the bash process
+exec python3 app.py
