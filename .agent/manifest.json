@@ -1,0 +1,41 @@
+{
+  "protocol": "3.0.0",
+  "project": "tmp_agent",
+  "lifecycle": "INIT",
+  "stats": {
+    "token_budget_est": 3289,
+    "rule_count": 14,
+    "generated_at": "2026-06-25T17:19:17.156531"
+  },
+  "capabilities": {
+    "reasoning_tier": "3",
+    "mcp_support": true,
+    "adaptive_priority": true,
+    "declarative_governance": true
+  },
+  "structure": {
+    "rules": ".agent/rules/",
+    "workflows": ".agent/workflows/",
+    "skills": ".agent/skills/",
+    "memory": ".agent/memory/",
+    "configs": ".agent/",
+    "map": "AGENT_MAP.yaml"
+  },
+  "ruleset": {
+    "layered": true,
+    "priority": [
+      "00_identity.md",
+      "01_tech_stack.md",
+      "02_security.md",
+      "05_environment.md",
+      "08_boundaries.md",
+      "04_reasoning.md",
+      "99_model_dispatch.md",
+      "11_self_learning.md",
+      "09_cross_repo.md",
+      "03_git.md",
+      "05_architecture.md",
+      "10_evolution.md"
+    ]
+  }
+}

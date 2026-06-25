@@ -19,9 +19,9 @@ from .agent import run_agent_loop, AGENT_STATE
 # Popular models to recommend
 POPULAR_MODELS = [
     {
-        "id": "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit",
-        "name": "Qwen 2.5 Uncensored 7B (4-bit)",
-        "description": "Uncensored instruction model. Obeys all tool calls and instructions without safety refusals.",
+        "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        "name": "Qwen 2.5 Coder 7B (4-bit)",
+        "description": "Recommended for coding. SOTA local code generation and tool execution. Fits comfortably in 16GB RAM.",
         "size": "approx 4.5 GB"
     },
     {
@@ -332,6 +332,51 @@ def save_history_route(req: ChatHistoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/sessions/{session_id}")
+def delete_session_route(session_id: str):
+    """Delete a chat session entirely."""
+    sessions_path = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/chat_sessions.json"
+    if os.path.exists(sessions_path):
+        try:
+            with open(sessions_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            sessions = data.get("sessions", [])
+            filtered = [s for s in sessions if s.get("id") != session_id]
+            data["sessions"] = filtered
+            with open(sessions_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return {"status": "success"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "success"}
+
+class SessionMetadataRequest(BaseModel):
+    pinned: Optional[bool] = None
+    archived: Optional[bool] = None
+
+@app.post("/api/sessions/{session_id}/metadata")
+def update_session_metadata(session_id: str, req: SessionMetadataRequest):
+    """Update metadata like pinned or archived for a session."""
+    sessions_path = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/chat_sessions.json"
+    if os.path.exists(sessions_path):
+        try:
+            with open(sessions_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            sessions = data.get("sessions", [])
+            for s in sessions:
+                if s.get("id") == session_id:
+                    if req.pinned is not None:
+                        s["pinned"] = req.pinned
+                    if req.archived is not None:
+                        s["archived"] = req.archived
+                    break
+            with open(sessions_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return {"status": "success"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "success"}
+
 @app.get("/api/project-overview")
 def get_project_overview_route():
     """Retrieve project_overview.md from the workspace if it exists."""
@@ -362,6 +407,7 @@ async def websocket_endpoint(websocket: WebSocket):
             model_id = data.get("model_id")
             temperature = float(data.get("temperature", 0.2))
             chat_history = data.get("history", [])
+            image_path = data.get("image_path")  # Optional: absolute path to image file
             
             if not prompt or not model_id:
                 await websocket.send_json({"type": "error", "message": "Missing prompt or model_id."})
@@ -379,12 +425,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 model_id=model_id,
                 ws_send_callback=ws_sender,
                 history=chat_history,
-                temp=temperature
+                temp=temperature,
+                image_path=image_path
             )
             
     except WebSocketDisconnect:
         print("[WebSocket] Client disconnected.")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[WebSocket] Exception: {str(e)}")
         try:
             await websocket.send_json({"type": "error", "message": f"Server connection error: {str(e)}"})

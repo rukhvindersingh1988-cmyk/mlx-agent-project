@@ -10,7 +10,10 @@ from email.header import decode_header
 from typing import Dict, Any, List, Optional
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from ddgs import DDGS
+import difflib
+
+PENDING_DIFFS = []
 
 # Default workspace directory
 workspace_dir = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent"
@@ -84,22 +87,49 @@ def read_file(relative_path: str, start_line: int = 1, end_line: Optional[int] =
 
 def write_file(relative_path: str, content: str) -> str:
     try:
+        # Self-preservation firewall
+        restricted = ['frontend', 'backend', 'models', 'knowledge_bank', 'app.py', 'run.sh']
+        parts = pathlib.Path(relative_path).parts
+        if parts and parts[0] in restricted:
+            return f"Error: Attempted to overwrite core agent file '{relative_path}'. Self-preservation rule engaged. Please place user projects in a new directory (e.g., 'user_projects/')."
+            
         file_path = resolve_path(relative_path)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
         # Create a backup if the file already exists
+        old_content = ""
         if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                old_content = f.read()
             backup_path = file_path + ".bak"
             shutil.copy2(file_path, backup_path)
             
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
+
+        # Generate Diff
+        diff_lines = list(difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            content.splitlines(keepends=True),
+            fromfile=relative_path,
+            tofile=relative_path
+        ))
+        diff_str = "".join(diff_lines)
+        if diff_str:
+            PENDING_DIFFS.append({"file": relative_path, "diff": diff_str})
+
         return f"Success: File '{relative_path}' written successfully ({len(content)} chars). A backup was saved as '{relative_path}.bak'."
     except Exception as e:
         return f"Error writing file: {str(e)}"
 
 def replace_file_content(relative_path: str, search_content: str, replacement_content: str) -> str:
     try:
+        # Self-preservation firewall
+        restricted = ['frontend', 'backend', 'models', 'knowledge_bank', 'app.py', 'run.sh']
+        parts = pathlib.Path(relative_path).parts
+        if parts and parts[0] in restricted:
+            return f"Error: Attempted to edit core agent file '{relative_path}'. Self-preservation rule engaged. Please place user projects in a new directory (e.g., 'user_projects/')."
+            
         file_path = resolve_path(relative_path)
         if not os.path.exists(file_path):
             return f"Error: File '{relative_path}' does not exist."
@@ -122,6 +152,17 @@ def replace_file_content(relative_path: str, search_content: str, replacement_co
         
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
+
+        # Generate Diff
+        diff_lines = list(difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=relative_path,
+            tofile=relative_path
+        ))
+        diff_str = "".join(diff_lines)
+        if diff_str:
+            PENDING_DIFFS.append({"file": relative_path, "diff": diff_str})
             
         return f"Success: Replaced 1 block in '{relative_path}'. A backup was saved as '{relative_path}.bak'."
     except Exception as e:
@@ -159,7 +200,8 @@ def list_dir(relative_path: str = ".") -> str:
 def web_search(query: str) -> str:
     try:
         print(f"[Tool: web_search] Querying DuckDuckGo: '{query}'")
-        with DDGS() as ddgs:
+        from ddgs import DDGS
+        with DDGS(timeout=10) as ddgs:
             results = list(ddgs.text(query, max_results=5))
         if not results:
             return f"No search results found for query: '{query}'"
@@ -387,6 +429,11 @@ TOOLS_MANIFEST = [
         "name": "grep_search",
         "description": "Search for a specific string or regex pattern across files in a directory using ripgrep.",
         "parameters": {"query": "The text to search for.", "search_path": "The directory to search inside.", "is_regex": "Set true to use regex matching.", "case_insensitive": "Set true to ignore case."}
+    },
+    {
+        "name": "final_answer",
+        "description": "Send the final text response back to the user when the task is complete.",
+        "parameters": {"message": "The final message content to output to the user."}
     }
 ]
 
@@ -403,6 +450,7 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
         elif name == "gmail_read_email": return gmail_read_email(args["email_id"])
         elif name == "gmail_delete_email": return gmail_delete_email(args["email_id"])
         elif name == "grep_search": return grep_search(args["query"], args.get("search_path", "."), args.get("is_regex", False), args.get("case_insensitive", True))
+        elif name == "final_answer": return args.get("message", "Task completed.")
         else: return f"Error: Tool '{name}' is not recognized."
     except KeyError as e:
         return f"Error: Missing required argument '{e.args[0]}' for tool '{name}'."

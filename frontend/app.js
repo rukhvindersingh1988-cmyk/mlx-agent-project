@@ -98,6 +98,34 @@ function setupEventListeners() {
         refreshOverviewBtn.addEventListener("click", loadProjectOverview);
     }
 
+    // Copy Content (Active Tab)
+    const copyOverviewBtn = document.getElementById("copy-overview-btn");
+    if (copyOverviewBtn) {
+        copyOverviewBtn.addEventListener("click", () => {
+            // Find the active tab content
+            const activeContent = document.querySelector(".right-sidebar-content.active");
+            if (activeContent) {
+                navigator.clipboard.writeText(activeContent.innerText).then(() => {
+                    addSystemNotification("Content copied to clipboard!");
+                }).catch(err => {
+                    console.error("Failed to copy text: ", err);
+                });
+            }
+        });
+    }
+
+    // Sidebar Tabs Logic
+    const sidebarTabs = document.querySelectorAll(".sidebar-tab");
+    sidebarTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            sidebarTabs.forEach(t => t.classList.remove("active"));
+            document.querySelectorAll(".right-sidebar-content").forEach(c => c.classList.remove("active"));
+            
+            tab.classList.add("active");
+            document.getElementById(tab.dataset.target).classList.add("active");
+        });
+    });
+
     // Workspace
     updateWorkspaceBtn.addEventListener("click", updateWorkspace);
     workspaceInput.addEventListener("keydown", (e) => {
@@ -561,6 +589,9 @@ function stopDictationUI() {
     chatInput.placeholder = "Ask anything...";
 }
 
+// Pending image path set by the attach button
+let pendingImagePath = null;
+
 function sendMessage() {
     const text = chatInput.value.trim();
     if (!text || isGenerating || !activeModel) return;
@@ -572,8 +603,13 @@ function sendMessage() {
     // Hide welcome screen
     welcomeScreen.classList.add("hidden");
     
-    // Append User Bubble
-    appendUserBubble(text);
+    // Append User Bubble (show image name if attached)
+    let displayText = text;
+    if (pendingImagePath) {
+        const fname = pendingImagePath.split("/").pop();
+        displayText = `📎 ${fname}\n${text}`;
+    }
+    appendUserBubble(displayText);
     
     // Setup Agent Bubble Placeholder
     createAgentBubble();
@@ -587,14 +623,59 @@ function sendMessage() {
         prompt: text,
         model_id: activeModel,
         temperature: parseFloat(tempSlider.value),
-        history: conversationHistory
+        history: conversationHistory,
+        image_path: pendingImagePath || null
     };
     
     ws.send(JSON.stringify(payload));
     
-    // Clear input box
+    // Clear input box and pending image
     chatInput.value = "";
     chatInput.style.height = "auto";
+    pendingImagePath = null;
+    // Reset attach button appearance
+    const attachBtn2 = document.getElementById("attach-btn");
+    if (attachBtn2) attachBtn2.title = "Upload Image/File";
+}
+
+// 8. Diff Rendering
+function renderDiff(file, diffString) {
+    const container = document.getElementById("review-changes-content");
+    
+    // Clear the empty state if it exists
+    const emptyState = container.querySelector(".empty-state");
+    if (emptyState) {
+        container.innerHTML = "";
+    }
+    
+    const diffContainer = document.createElement("div");
+    diffContainer.className = "diff-container";
+    
+    const header = document.createElement("div");
+    header.className = "diff-header";
+    header.textContent = file;
+    diffContainer.appendChild(header);
+    
+    const lines = diffString.split('\n');
+    lines.forEach(line => {
+        if (!line) return;
+        const lineDiv = document.createElement("div");
+        lineDiv.className = "diff-line";
+        
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            lineDiv.classList.add("diff-add");
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+            lineDiv.classList.add("diff-rem");
+        } else if (line.startsWith('@@')) {
+            lineDiv.classList.add("diff-info");
+        }
+        
+        lineDiv.textContent = line;
+        diffContainer.appendChild(lineDiv);
+    });
+    
+    // Prepend so newest diffs are at the top
+    container.insertBefore(diffContainer, container.firstChild);
 }
 
 // 6. Handling WebSocket Messages
@@ -607,13 +688,15 @@ let activeToolBlock = null;
 let activeToolOutputContent = null;
 let finalResponseText = "";
 let currentFinalResponseBlock = null;
+let currentLoop = 1;
 
 function handleWebSocketMessage(event) {
     const msg = JSON.parse(event.data);
     
     switch (msg.type) {
         case "turn_start":
-            agentProgressText.textContent = `Loop ${msg.loop}: Reasoning...`;
+            currentLoop = msg.loop;
+            agentProgressText.textContent = `Loop ${currentLoop}: Reasoning...`;
             addThinkingBlock(msg.loop);
             break;
             
@@ -622,17 +705,33 @@ function handleWebSocketMessage(event) {
             break;
             
         case "tool_start":
-            agentProgressText.textContent = `Running tool: ${msg.name}...`;
+            agentProgressText.textContent = `Loop ${currentLoop}: Running tool ${msg.name}...`;
             addToolCallBlock(msg.name, msg.args);
             break;
             
         case "tool_end":
-            agentProgressText.textContent = `Tool ${msg.name} finished.`;
+            agentProgressText.textContent = `Loop ${currentLoop}: Tool ${msg.name} finished.`;
             completeToolCallBlock(msg.output, false);
+            
+            // Show tool output in Overview tab
+            const overviewDiv = document.getElementById("project-overview-content");
+            if (overviewDiv) {
+                // Switch to overview tab
+                const overviewTabBtn = document.querySelector('.sidebar-tab[data-target="project-overview-content"]');
+                if (overviewTabBtn) overviewTabBtn.click();
+                
+                // Render output nicely
+                overviewDiv.innerHTML = `
+                    <div style="padding: 15px;">
+                        <h3 style="color: var(--accent-color); margin-top: 0;">Tool Output: ${msg.name}</h3>
+                        <pre style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; white-space: pre-wrap; font-family: monospace; font-size: 0.9em; max-height: 70vh; overflow-y: auto; color: #a3a3a3;">${escapeHTML(msg.output)}</pre>
+                    </div>
+                `;
+            }
             break;
             
         case "tool_error":
-            agentProgressText.textContent = `Tool execution failed.`;
+            agentProgressText.textContent = `Loop ${currentLoop}: Tool failed.`;
             completeToolCallBlock(msg.error, true);
             break;
             
@@ -645,7 +744,24 @@ function handleWebSocketMessage(event) {
             showErrorBanner(msg.message);
             cleanupGenerationState();
             break;
-            
+
+        case "file_diff":
+            // Automatically switch to Review Changes tab
+            document.getElementById("review-changes-tab").click();
+            renderDiff(msg.file, msg.diff);
+            break;
+
+        case "model_switched":
+            // Silently update the active model in UI — no interruption to user
+            activeModel = msg.model_id;
+            activeModelHeader.textContent = `Active Model: ${activeModel}`;
+            // Update the selector dropdown if it exists
+            const sel = document.getElementById("model-selector");
+            if (sel) sel.value = activeModel;
+            // Show a tiny non-blocking toast
+            showModelSwitchToast(msg.reason);
+            break;
+
         case "complete":
         default:
             // Final completion
@@ -714,20 +830,57 @@ async function loadSessions() {
     }
 }
 
+// Toggle archived section view state
+let archiveExpanded = false;
+
 function renderSessionsList() {
     const listDiv = document.getElementById("recent-chats-list");
-    if (!listDiv) return;
+    const pinnedSection = document.getElementById("pinned-section");
+    const pinnedDiv = document.getElementById("pinned-chats-list");
+    const archivedDiv = document.getElementById("archived-chats-list");
+    const archiveToggleBtn = document.getElementById("archive-toggle-btn");
+    
+    if (!listDiv || !pinnedDiv || !archivedDiv) return;
     
     listDiv.innerHTML = "";
+    pinnedDiv.innerHTML = "";
+    archivedDiv.innerHTML = "";
     
-    // Prepend the new unsaved chat if active
+    // Add event listener for toggling archived view if not already added
+    if (archiveToggleBtn && !archiveToggleBtn.dataset.listener) {
+        archiveToggleBtn.dataset.listener = "true";
+        archiveToggleBtn.addEventListener("click", () => {
+            archiveExpanded = !archiveExpanded;
+            if (archiveExpanded) {
+                archivedDiv.classList.remove("hidden");
+                archiveToggleBtn.classList.add("active");
+            } else {
+                archivedDiv.classList.add("hidden");
+                archiveToggleBtn.classList.remove("active");
+            }
+        });
+    }
+
     let displaySessions = [...allSessions];
     if (!displaySessions.find(s => s.id === currentSessionId)) {
         const title = conversationHistory.length > 0 ? conversationHistory[0].content : "New Chat";
-        displaySessions.unshift({ id: currentSessionId, title: title, history: conversationHistory });
+        displaySessions.unshift({ id: currentSessionId, title: title, history: conversationHistory, pinned: false, archived: false });
     }
     
+    let hasPinned = false;
+
     displaySessions.forEach(session => {
+        const isPinned = !!session.pinned;
+        const isArchived = !!session.archived;
+        
+        // Skip display on unsaved chat if active session is archived
+        if (session.id === currentSessionId && isArchived) {
+            // Keep archived active session shown
+        }
+
+        const container = document.createElement("div");
+        container.className = `session-item-container ${session.id === currentSessionId ? "active" : ""}`;
+        
         const item = document.createElement("button");
         item.className = `session-item ${session.id === currentSessionId ? "active" : ""}`;
         item.innerHTML = `
@@ -736,6 +889,7 @@ function renderSessionsList() {
             </svg>
             <span>${escapeHTML(session.title || "New Chat")}</span>
         `;
+        
         item.onclick = async () => {
             currentSessionId = session.id;
             chatHistory.innerHTML = "";
@@ -743,8 +897,159 @@ function renderSessionsList() {
             await loadHistory(currentSessionId);
             renderSessionsList();
         };
-        listDiv.appendChild(item);
+        
+        // Pin/Archive/Delete actions
+        const actions = document.createElement("div");
+        actions.className = "session-actions";
+        
+        // Pinned Button
+        const pinBtn = document.createElement("button");
+        pinBtn.className = `action-icon-btn ${isPinned ? "active" : ""}`;
+        pinBtn.title = isPinned ? "Unpin conversation" : "Pin conversation";
+        pinBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="17" x2="12" y2="22"></line>
+                <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.5A2 2 0 0 1 15 9.26V5a3 3 0 0 0-6 0v4.26a2 2 0 0 1-.78 1.54l-2.78 3.5a2 2 0 0 0-.44 1.24Z"></path>
+            </svg>
+        `;
+        pinBtn.onclick = (e) => {
+            e.stopPropagation();
+            togglePinSession(session.id, !isPinned);
+        };
+        
+        // Archive Button
+        const archiveBtn = document.createElement("button");
+        archiveBtn.className = `action-icon-btn ${isArchived ? "active" : ""}`;
+        archiveBtn.title = isArchived ? "Unarchive conversation" : "Archive conversation";
+        archiveBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                <rect x="1" y="3" width="22" height="5"></rect>
+                <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+        `;
+        archiveBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleArchiveSession(session.id, !isArchived);
+        };
+        
+        // Delete Button
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "action-icon-btn";
+        deleteBtn.title = "Delete conversation";
+        deleteBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-error)">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+        `;
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (confirm(`Delete conversation "${session.title || "New Chat"}" permanently?`)) {
+                deleteSession(session.id);
+            }
+        };
+        
+        actions.appendChild(pinBtn);
+        actions.appendChild(archiveBtn);
+        actions.appendChild(deleteBtn);
+        
+        container.appendChild(item);
+        container.appendChild(actions);
+        
+        if (isPinned) {
+            pinnedDiv.appendChild(container);
+            hasPinned = true;
+        } else if (isArchived) {
+            archivedDiv.appendChild(container);
+        } else {
+            listDiv.appendChild(container);
+        }
     });
+    
+    // Toggle Pinned sidebar section visibility
+    if (hasPinned) {
+        pinnedSection.classList.remove("hidden");
+    } else {
+        pinnedSection.classList.add("hidden");
+    }
+}
+
+async function togglePinSession(sessionId, state) {
+    try {
+        // Find in local array & update state
+        const session = allSessions.find(s => s.id === sessionId);
+        if (session) {
+            session.pinned = state;
+            // Un-archive if pinned
+            if (state) session.archived = false;
+            
+            await fetch("/api/history", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    session_id: sessionId,
+                    title: session.title,
+                    history: session.history 
+                })
+            });
+            // Update additional metadata keys on backend by using save
+            await saveHistoryMetadata(sessionId, { pinned: state, archived: session.archived });
+        } else if (sessionId === currentSessionId) {
+            // Unsaved active chat toggle pin
+            addSystemNotification("Pin state will be saved once you start typing.");
+        }
+        loadSessions();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function toggleArchiveSession(sessionId, state) {
+    try {
+        const session = allSessions.find(s => s.id === sessionId);
+        if (session) {
+            session.archived = state;
+            // Un-pin if archived
+            if (state) session.pinned = false;
+            
+            await saveHistoryMetadata(sessionId, { pinned: session.pinned, archived: state });
+        }
+        loadSessions();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function deleteSession(sessionId) {
+    try {
+        await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+        if (sessionId === currentSessionId) {
+            // Reset to new chat if we deleted the current active one
+            currentSessionId = crypto.randomUUID();
+            conversationHistory = [];
+            chatHistory.innerHTML = "";
+            chatHistory.appendChild(welcomeScreen);
+            welcomeScreen.style.display = "flex";
+            activeModelHeader.textContent = activeModel ? `Active Model: ${activeModel}` : "No active model loaded.";
+        }
+        loadSessions();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function saveHistoryMetadata(sessionId, metadata) {
+    // Send helper update meta to backend
+    try {
+        await fetch(`/api/sessions/${sessionId}/metadata`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(metadata)
+        });
+    } catch (e) {
+        console.error("Failed to save session metadata", e);
+    }
 }
 
 async function loadHistory(sessionId) {
@@ -1004,6 +1309,29 @@ function showErrorBanner(message) {
     scrollChatToBottom();
 }
 
+function showModelSwitchToast(reason) {
+    if (!reason) return;
+    // Remove any existing toast
+    const old = document.getElementById("model-switch-toast");
+    if (old) old.remove();
+
+    const toast = document.createElement("div");
+    toast.id = "model-switch-toast";
+    toast.textContent = reason;
+    toast.style.cssText = `
+        position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+        background: rgba(99,102,241,0.92); color: #fff;
+        padding: 7px 18px; border-radius: 20px; font-size: 13px;
+        font-family: inherit; font-weight: 500; z-index: 9999;
+        backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        transition: opacity 0.4s ease; pointer-events: none;
+    `;
+    document.body.appendChild(toast);
+    // Fade out after 2.5s
+    setTimeout(() => { toast.style.opacity = "0"; }, 2500);
+    setTimeout(() => { toast.remove(); }, 3000);
+}
+
 // 8. Toggles & Collapse UI handlers
 
 window.toggleThinking = function(headerElement) {
@@ -1200,4 +1528,26 @@ function escapeHTML(text) {
 
 function scrollChatToBottom() {
     chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+// Attach file logic
+const attachBtn = document.getElementById("attach-btn");
+if (attachBtn) {
+    attachBtn.addEventListener("click", async () => {
+        if (window.pywebview && window.pywebview.api) {
+            const filePath = await window.pywebview.api.open_file_dialog();
+            if (filePath) {
+                pendingImagePath = filePath;
+                const fname = filePath.split("/").pop();
+                // Show the filename in the input box as a hint
+                chatInput.value = `Analyse this image: ${fname}`;
+                attachBtn.title = `📎 ${fname} ready`;
+                // Enable send
+                sendBtn.disabled = false;
+                chatInput.focus();
+            }
+        } else {
+            console.warn("pywebview API not available. File picker disabled.");
+        }
+    });
 }
