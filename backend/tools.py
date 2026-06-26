@@ -6,6 +6,9 @@ import smtplib
 import imaplib
 import email
 import shutil
+import threading
+import asyncio
+import time
 from email.header import decode_header
 from typing import Dict, Any, List, Optional
 import httpx
@@ -14,6 +17,50 @@ from ddgs import DDGS
 import difflib
 
 PENDING_DIFFS = []
+
+active_subprocesses = []
+active_subprocesses_lock = threading.Lock()
+
+def run_subprocess_managed(command: str, shell: bool = True, cwd: str = None, timeout: float = None, env: dict = None) -> subprocess.CompletedProcess:
+    proc = subprocess.Popen(
+        command,
+        shell=shell,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env
+    )
+    with active_subprocesses_lock:
+        active_subprocesses.append(proc)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=proc.returncode,
+            stdout=stdout,
+            stderr=stderr
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        proc.communicate()
+        raise
+    finally:
+        with active_subprocesses_lock:
+            if proc in active_subprocesses:
+                active_subprocesses.remove(proc)
+
+def kill_active_subprocesses():
+    with active_subprocesses_lock:
+        for proc in active_subprocesses:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        active_subprocesses.clear()
 
 # Default workspace directory
 workspace_dir = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent"
@@ -39,13 +86,10 @@ def resolve_path(relative_path: str) -> str:
 def run_command(command: str) -> str:
     try:
         print(f"[Tool: run_command] Executing: {command} in Cwd: {workspace_dir}")
-        result = subprocess.run(
+        result = run_subprocess_managed(
             command,
             shell=True,
             cwd=workspace_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
             timeout=120
         )
         output = ""
@@ -242,6 +286,38 @@ def web_fetch(url: str) -> str:
     except Exception as e:
         return f"Error fetching web page: {str(e)}"
 
+def get_secret(key: str) -> str:
+    """Read a secret from the local secrets.json vault."""
+    secrets_path = resolve_path("secrets.json")
+    if not os.path.exists(secrets_path):
+        return f"Secret '{key}' not found. The secrets vault does not exist yet."
+    try:
+        with open(secrets_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if key in data:
+            # We obscure it slightly in the tool return so it doesn't get fully logged in raw text if not needed
+            val = data[key]
+            masked = val[:4] + "***" + val[-4:] if len(val) > 8 else "***"
+            return f"Secret '{key}' successfully loaded. (Value: {masked})"
+        return f"Secret '{key}' not found in the vault."
+    except Exception as e:
+        return f"Error reading secrets: {str(e)}"
+
+def set_secret(key: str, value: str) -> str:
+    """Save a secret to the local secrets.json vault."""
+    secrets_path = resolve_path("secrets.json")
+    try:
+        data = {}
+        if os.path.exists(secrets_path):
+            with open(secrets_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data[key] = value
+        with open(secrets_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return f"Success: Secret '{key}' saved securely to the vault."
+    except Exception as e:
+        return f"Error saving secret: {str(e)}"
+
 def get_gmail_credentials():
     config_path = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/gmail_config.json"
     if not os.path.exists(config_path):
@@ -354,21 +430,383 @@ def gmail_delete_email(email_id: str) -> str:
 def grep_search(query: str, search_path: str = ".", is_regex: bool = False, case_insensitive: bool = True, match_per_line: bool = True) -> str:
     try:
         target_path = resolve_path(search_path)
-        cmd = ["rg"]
+        cmd = ["grep", "-R"]
         if case_insensitive: cmd.append("-i")
         if match_per_line: cmd.append("-n")
         else: cmd.append("-l")
         if not is_regex: cmd.append("-F")
-        cmd.extend(["--max-count", "50", query, target_path])
+        else: cmd.append("-E")
+        # Exclude common noisy directories and massive log files
+        cmd.extend(["--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=.venv", "--exclude-dir=__pycache__"])
+        cmd.extend(["--exclude=*.json", "--exclude=*.log", "--exclude=project_overview.md"])
+        cmd.extend([query, target_path])
+        
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        
         if result.returncode == 0:
-            return f"--- Search Results for '{query}' ---\n{result.stdout}"
+            lines = result.stdout.strip().splitlines()
+            # Truncate each line to prevent massive minified JSON lines from flooding the context
+            truncated_lines = [line[:200] + ("..." if len(line) > 200 else "") for line in lines]
+            if len(truncated_lines) > 50:
+                return f"--- Search Results for '{query}' ---\n" + "\n".join(truncated_lines[:50]) + f"\n... (and {len(truncated_lines) - 50} more lines omitted)"
+            return f"--- Search Results for '{query}' ---\n" + "\n".join(truncated_lines)
         elif result.returncode == 1:
             return f"No matches found for '{query}'."
         else:
             return f"Search Error:\n{result.stderr}"
     except Exception as e:
         return f"Error executing search: {str(e)}"
+
+# Dangerous shell command patterns that should NEVER be passed as a "task"
+DANGEROUS_PATTERNS = ["kill ", "rm -rf", "sudo ", "mkfs", "dd if=", ":(){ :|:& };:", "> /dev/", "shutdown", "reboot", "passwd"]
+
+queue_lock = threading.Lock()
+
+# Global GPU inference lock to serialize local model loads and executions
+gpu_inference_lock = threading.Lock()
+
+
+def set_subagent_status(role: str, status: str):
+    """Write subagent status (e.g. RUNNING, COMPLETED, CRASHED) to subagent_status.json."""
+    status_path = resolve_path("subagent_status.json")
+    try:
+        with queue_lock:
+            data = {}
+            if os.path.exists(status_path):
+                try:
+                    with open(status_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except:
+                    data = {}
+            data[role] = {
+                "status": status,
+                "timestamp": time.time()
+            }
+            with open(status_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+    except:
+        pass
+
+
+def get_subagents_summary() -> str:
+    """Return a readable text summary of all active subagents and their current running statuses."""
+    status_path = resolve_path("subagent_status.json")
+    try:
+        if not os.path.exists(status_path):
+            return "No active subagents."
+        with open(status_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not data:
+            return "No active subagents."
+        
+        lines = []
+        for role, info in data.items():
+            status = info.get("status", "UNKNOWN")
+            if status == "RUNNING":
+                elapsed = int(time.time() - info.get("timestamp", time.time()))
+                lines.append(f"- Subagent '{role}': {status} (running for {elapsed}s)")
+            else:
+                lines.append(f"- Subagent '{role}': {status}")
+        return "\n".join(lines)
+    except:
+        return "No active subagents."
+
+
+def _subagent_thread_runner(role: str, task: str):
+    """Background thread function that runs a subagent.
+    Uses free online HF serverless models first to run in parallel without GPU thrashing.
+    Falls back to sequential local model execution (via gpu_inference_lock) if offline/limited.
+    Results are written back to message_queue.json so the main agent can read them."""
+    set_subagent_status(role, "RUNNING")
+    try:
+        subagent_result = {"text": ""}
+        success = False
+        
+        # 1. Try free online open-source models first to prevent GPU memory/thread conflicts
+        try:
+            from huggingface_hub import InferenceClient
+            token = os.environ.get("HF_TOKEN") or None
+            online_model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+            client = InferenceClient(model=online_model, token=token)
+            
+            system_prompt = f"You are a Subagent with the role: {role}. Your job is to assist the main agent. Answer the user prompt directly."
+            full_prompt = f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n<|im_start|>user\n{task}\n<|im_end|>\n<|im_start|>assistant\n"
+            
+            response_text = ""
+            for token_chunk in client.text_generation(
+                full_prompt,
+                max_new_tokens=1024,
+                temperature=0.3,
+                stream=True
+            ):
+                response_text += token_chunk
+                
+            if response_text.strip():
+                subagent_result["text"] = response_text
+                success = True
+                print(f"[Subagent] '{role}' successfully processed online via '{online_model}'.")
+        except Exception as api_err:
+            print(f"[Subagent] Online API failed for '{role}': {api_err}. Falling back to sequential local MLX engine...")
+
+        # 2. Sequential local fallback using GPU lock
+        if not success:
+            try:
+                from agent import run_agent_loop
+            except ImportError:
+                from .agent import run_agent_loop
+
+            async def subagent_callback(msg: Dict[str, Any]):
+                """Capture the subagent's final_response."""
+                if msg.get("type") == "final_response":
+                    subagent_result["text"] = msg.get("text", "")
+
+            # Acquire GPU lock so we don't reload/unload local models in parallel threads
+            with gpu_inference_lock:
+                print(f"[Subagent] '{role}' acquired GPU lock. Running local inference...")
+                asyncio.run(run_agent_loop(
+                    user_prompt=task,
+                    model_id="mlx-community/Qwen2.5-7B-Instruct-4bit",  # Default model for subagents
+                    ws_send_callback=subagent_callback,
+                    role=role
+                ))
+
+        # Write the result back to message_queue.json for the main agent
+        queue_path = resolve_path("message_queue.json")
+        with queue_lock:
+            queue = {}
+            if os.path.exists(queue_path):
+                try:
+                    with open(queue_path, "r") as f:
+                        queue = json.load(f)
+                except Exception:
+                    queue = {}
+            if "MainAgent" not in queue:
+                queue["MainAgent"] = []
+            queue["MainAgent"].append({
+                "from": role,
+                "message": f"Subagent '{role}' completed.\nResult: {subagent_result['text'][:2000]}"
+            })
+            with open(queue_path, "w") as f:
+                json.dump(queue, f, indent=2)
+        set_subagent_status(role, "COMPLETED")
+        print(f"[Subagent] '{role}' finished successfully.")
+
+    except Exception as e:
+        # Crash in subagent must NOT kill the main agent
+        print(f"[Subagent] '{role}' crashed: {e}")
+        set_subagent_status(role, f"CRASHED: {str(e)[:50]}")
+        try:
+            queue_path = resolve_path("message_queue.json")
+            with queue_lock:
+                queue = {}
+                if os.path.exists(queue_path):
+                    try:
+                        with open(queue_path, "r") as f:
+                            queue = json.load(f)
+                    except Exception:
+                        queue = {}
+                if "MainAgent" not in queue:
+                    queue["MainAgent"] = []
+                queue["MainAgent"].append({
+                    "from": role,
+                    "message": f"Subagent '{role}' crashed with error: {str(e)[:500]}"
+                })
+                with open(queue_path, "w") as f:
+                    json.dump(queue, f, indent=2)
+        except Exception:
+            pass  # Last resort: don't propagate queue write failures
+
+
+def invoke_subagent(role: str, task: str) -> str:
+    # Safety guard: block raw shell commands masquerading as tasks
+    task_lower = task.strip().lower()
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in task_lower:
+            return f"Error: Safety violation. The task '{task[:60]}...' looks like a dangerous shell command, not an AI task description. Use `run_command` for shell commands. The `invoke_subagent` tool spawns an AI agent, not a terminal."
+    
+    queue_path = resolve_path("message_queue.json")
+    try:
+        with queue_lock:
+            queue = {}
+            if os.path.exists(queue_path):
+                try:
+                    with open(queue_path, "r") as f:
+                        queue = json.load(f)
+                except Exception:
+                    queue = {}
+            if role not in queue:
+                queue[role] = []
+            queue[role].append({"from": "MainAgent", "message": task})
+            with open(queue_path, "w") as f:
+                json.dump(queue, f, indent=2)
+
+        # Launch the subagent in a background thread so the main agent
+        # can continue working while the subagent processes the task.
+        thread = threading.Thread(
+            target=_subagent_thread_runner,
+            args=(role, task),
+            daemon=True,
+            name=f"subagent-{role}"
+        )
+        thread.start()
+        print(f"[Subagent] Launched background thread for '{role}'")
+
+        return f"Subagent '{role}' invoked with task: {task}. It is now running in the background. Use `check_inbox` with my_role='MainAgent' to get the result when ready."
+    except Exception as e:
+        return f"Error invoking subagent: {str(e)}"
+
+def send_message(recipient_role: str, message: str) -> str:
+    queue_path = resolve_path("message_queue.json")
+    try:
+        with queue_lock:
+            queue = {}
+            if os.path.exists(queue_path):
+                try:
+                    with open(queue_path, "r") as f:
+                        queue = json.load(f)
+                except Exception:
+                    queue = {}
+            if recipient_role not in queue:
+                queue[recipient_role] = []
+            queue[recipient_role].append({"message": message})
+            with open(queue_path, "w") as f:
+                json.dump(queue, f, indent=2)
+        return f"Message sent to '{recipient_role}'."
+    except Exception as e:
+        return f"Error sending message: {str(e)}"
+
+def check_inbox(my_role: str) -> str:
+    queue_path = resolve_path("message_queue.json")
+    try:
+        with queue_lock:
+            if os.path.exists(queue_path):
+                try:
+                    with open(queue_path, "r") as f:
+                        queue = json.load(f)
+                except Exception:
+                    return "Inbox is empty (corrupted queue file reset)."
+            else:
+                return "Inbox is empty. The subagents are still working in the background. Do NOT keep calling check_inbox immediately. Instead, use the 'wait' tool to pause for 5-10 seconds, or perform other tasks."
+            
+            messages = queue.get(my_role, [])
+            if not messages:
+                return "Inbox is empty. The subagents are still working in the background. Do NOT keep calling check_inbox immediately. Instead, use the 'wait' tool to pause for 5-10 seconds, or perform other tasks."
+            
+            queue[my_role] = []
+            with open(queue_path, "w") as f:
+                json.dump(queue, f, indent=2)
+            
+        output = "--- Inbox Messages ---\n"
+        for msg in messages:
+            output += f"- {msg}\n"
+        return output
+    except Exception as e:
+        return f"Error checking inbox: {str(e)}"
+
+
+def wait(seconds: int) -> str:
+    """Pause execution for a specified duration in seconds to let subagents finish or avoid hot-polling."""
+    try:
+        secs = int(seconds)
+        time.sleep(secs)
+        return f"Successfully paused execution for {secs} seconds."
+    except Exception as e:
+        return f"Error waiting: {str(e)}"
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Code Execution Sandbox (Upgrade 5)
+# Runs untrusted commands with:
+# - 30-second timeout
+# - Restricted PATH (only essential system binaries)
+# - No network access (using macOS sandbox-exec if available)
+# - Captured stdout + stderr
+# ─────────────────────────────────────────────────────────────────────────────
+
+# macOS sandbox profile that denies all network access
+_SANDBOX_PROFILE = """(version 1)
+(allow default)
+(deny network*)
+"""
+
+
+def run_sandboxed(command: str) -> str:
+    """Run an untrusted command in a restricted sandbox.
+    
+    Security measures:
+    - 30-second hard timeout
+    - Restricted PATH (only /usr/bin, /bin, /usr/local/bin)
+    - No network access via macOS sandbox-exec (graceful fallback if unavailable)
+    - Both stdout and stderr captured
+    """
+    try:
+        print(f"[Tool: run_sandboxed] Executing in sandbox: {command}")
+
+        # Restricted environment: limited PATH, no proxy/network env vars
+        sandbox_env = {
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "HOME": os.path.expanduser("~"),
+            "LANG": "en_US.UTF-8",
+        }
+
+        # Try to use macOS sandbox-exec for network isolation
+        # sandbox-exec is available on macOS and enforces kernel-level restrictions
+        use_sandbox_exec = shutil.which("sandbox-exec") is not None
+
+        if use_sandbox_exec:
+            # Write temporary sandbox profile
+            import tempfile
+            profile_fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="mlx_sandbox_")
+            try:
+                with os.fdopen(profile_fd, "w") as pf:
+                    pf.write(_SANDBOX_PROFILE)
+                
+                full_command = f'sandbox-exec -f "{profile_path}" /bin/bash -c {_shell_quote(command)}'
+                result = run_subprocess_managed(
+                    full_command,
+                    shell=True,
+                    cwd=workspace_dir,
+                    timeout=30,
+                    env=sandbox_env
+                )
+            finally:
+                # Always clean up the temp profile
+                try:
+                    os.unlink(profile_path)
+                except OSError:
+                    pass
+        else:
+            # Fallback: run without sandbox-exec but still with restricted env and timeout
+            print("[Tool: run_sandboxed] WARNING: sandbox-exec not available, running with restricted env only")
+            result = run_subprocess_managed(
+                command,
+                shell=True,
+                cwd=workspace_dir,
+                timeout=30,
+                env=sandbox_env
+            )
+
+        output = ""
+        if result.stdout:
+            output += f"STDOUT:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"STDERR:\n{result.stderr}\n"
+        if result.returncode != 0:
+            output += f"\nExit code: {result.returncode}"
+        if not output.strip():
+            output = "Command completed with no output."
+        return output
+
+    except subprocess.TimeoutExpired:
+        return "Error: Sandboxed command timed out after 30 seconds."
+    except Exception as e:
+        return f"Error executing sandboxed command: {str(e)}"
+
+
+def _shell_quote(s: str) -> str:
+    """Quote a string for safe shell inclusion."""
+    return "'" + s.replace("'", "'\"'\"'") + "'"
 
 TOOLS_MANIFEST = [
     {
@@ -434,11 +872,49 @@ TOOLS_MANIFEST = [
         "name": "final_answer",
         "description": "Send the final text response back to the user when the task is complete.",
         "parameters": {"message": "The final message content to output to the user."}
+    },
+    {
+        "name": "invoke_subagent",
+        "description": "Spawn a new AI subagent with a specialized role to work on a subtask. This does NOT run shell commands — use `run_command` for that. The role should be an AI specialty like 'Researcher', 'QA Tester', 'Code Reviewer', or 'Security Auditor'. The task should be a natural-language description of what you want the AI to do, like 'Read the README and summarize the architecture'.",
+        "parameters": {"role": "The AI specialty role, e.g. 'Researcher', 'QA Tester', 'Code Reviewer'. NOT a terminal name.", "task": "A natural-language description of the AI task. NOT a shell command."}
+    },
+    {
+        "name": "send_message",
+        "description": "Send a natural-language message to another AI subagent by its role name. Use this to hand off results, request reviews, or coordinate between agents.",
+        "parameters": {"recipient_role": "The role name of the AI subagent to send the message to.", "message": "The natural-language message content."}
+    },
+    {
+        "name": "check_inbox",
+        "description": "Check your inbox for messages from other AI subagents.",
+        "parameters": {"my_role": "Your role name to check messages for."}
+    },
+    {
+        "name": "wait",
+        "description": "Pause execution for a specified duration in seconds to let subagents finish or avoid hot-polling.",
+        "parameters": {"seconds": "The number of seconds to sleep (e.g. 5 or 10)."}
+    },
+    {
+        "name": "get_secret",
+        "description": "Read a secret (like a token or password) from the local secrets vault. Use this before running commands that require authentication.",
+        "parameters": {"key": "The name of the secret to retrieve (e.g. 'github_token')."}
+    },
+    {
+        "name": "set_secret",
+        "description": "Save a secret to the local secrets vault for future use. Ask the user for the token first, then save it.",
+        "parameters": {"key": "The name of the secret (e.g. 'github_token').", "value": "The actual secret string."}
+    },
+    {
+        "name": "run_sandboxed",
+        "description": "Run an untrusted command in a restricted sandbox with no network access and a 30-second timeout. Use this for running user-generated or AI-generated code that has not been reviewed.",
+        "parameters": {"command": "The shell command string to execute in the sandbox."}
     }
 ]
 
 def execute_tool(name: str, args: Dict[str, Any]) -> str:
     try:
+        # Normalize all argument keys to lowercase to gracefully handle LLM capitalization hallucinations
+        args = {k.lower(): v for k, v in args.items()}
+        
         if name == "run_command": return run_command(args["command"])
         elif name == "read_file": return read_file(args["relative_path"], args.get("start_line", 1), args.get("end_line"))
         elif name == "write_file": return write_file(args["relative_path"], args["content"])
@@ -450,7 +926,14 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
         elif name == "gmail_read_email": return gmail_read_email(args["email_id"])
         elif name == "gmail_delete_email": return gmail_delete_email(args["email_id"])
         elif name == "grep_search": return grep_search(args["query"], args.get("search_path", "."), args.get("is_regex", False), args.get("case_insensitive", True))
+        elif name == "get_secret": return get_secret(args["key"])
+        elif name == "set_secret": return set_secret(args["key"], args["value"])
         elif name == "final_answer": return args.get("message", "Task completed.")
+        elif name == "invoke_subagent": return invoke_subagent(args["role"], args["task"])
+        elif name == "send_message": return send_message(args["recipient_role"], args["message"])
+        elif name == "check_inbox": return check_inbox(args["my_role"])
+        elif name == "wait": return wait(args["seconds"])
+        elif name == "run_sandboxed": return run_sandboxed(args["command"])
         else: return f"Error: Tool '{name}' is not recognized."
     except KeyError as e:
         return f"Error: Missing required argument '{e.args[0]}' for tool '{name}'."

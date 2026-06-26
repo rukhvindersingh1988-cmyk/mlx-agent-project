@@ -85,8 +85,9 @@ function setupEventListeners() {
         currentSessionId = crypto.randomUUID();
         conversationHistory = [];
         chatHistory.innerHTML = "";
-        chatHistory.appendChild(welcomeScreen);
+        welcomeScreen.classList.remove("hidden");
         welcomeScreen.style.display = "flex";
+        chatHistory.appendChild(welcomeScreen);
         activeModelHeader.textContent = activeModel ? `Active Model: ${activeModel}` : "No active model loaded.";
         document.getElementById('chat-input').value = "";
         renderSessionsList();
@@ -123,6 +124,11 @@ function setupEventListeners() {
             
             tab.classList.add("active");
             document.getElementById(tab.dataset.target).classList.add("active");
+            
+            // Auto-refresh Activity Log when tab is clicked
+            if (tab.dataset.target === "project-overview-content") {
+                loadProjectOverview();
+            }
         });
     });
 
@@ -229,6 +235,7 @@ async function stopAgent() {
         await fetch("/api/stop", { method: "POST" });
         await fetch("/api/stop-speak", { method: "POST" });
         stopBtn.classList.add("hidden");
+        cleanupGenerationState();
     } catch (e) {
         console.error("Failed to stop agent", e);
     }
@@ -502,7 +509,7 @@ function connectWebSocket() {
 function updateInputState() {
     const connected = (ws && ws.readyState === WebSocket.OPEN);
     const modelReady = (activeModel !== "");
-    const disabled = !connected || !modelReady || isGenerating;
+    const disabled = !connected || !modelReady;
     
     chatInput.disabled = disabled;
     sendBtn.disabled = disabled;
@@ -520,11 +527,13 @@ function updateInputState() {
             chatInput.placeholder = "Disconnected from backend server...";
         } else if (!modelReady) {
             chatInput.placeholder = "Select or download a model first...";
-        } else {
-            chatInput.placeholder = "Agent is working...";
         }
     } else {
-        chatInput.placeholder = "Ask anything... (Shift+Enter for new line)";
+        if (isGenerating) {
+            chatInput.placeholder = "Agent is working... Type here and press Enter to inject instructions.";
+        } else {
+            chatInput.placeholder = "Ask anything... (Shift+Enter for new line)";
+        }
     }
 }
 
@@ -594,14 +603,27 @@ let pendingImagePath = null;
 
 function sendMessage() {
     const text = chatInput.value.trim();
-    if (!text || isGenerating || !activeModel) return;
+    if (!text || !activeModel) return;
+    
+    if (isGenerating) {
+        // Send user steering instruction in real-time
+        const payload = {
+            type: "user_injection",
+            prompt: text
+        };
+        ws.send(JSON.stringify(payload));
+        appendUserBubble(text);
+        chatInput.value = "";
+        chatInput.style.height = "auto";
+        return;
+    }
     
     isGenerating = true;
     currentPromptText = text;
     updateInputState();
     
     // Hide welcome screen
-    welcomeScreen.classList.add("hidden");
+    welcomeScreen.style.display = "none";
     
     // Append User Bubble (show image name if attached)
     let displayText = text;
@@ -945,7 +967,10 @@ function renderSessionsList() {
         `;
         deleteBtn.onclick = (e) => {
             e.stopPropagation();
-            if (confirm(`Delete conversation "${session.title || "New Chat"}" permanently?`)) {
+            const displayTitle = session.title && session.title.length > 60 
+                ? session.title.substring(0, 60) + "..." 
+                : (session.title || "New Chat");
+            if (confirm(`Delete conversation "${displayTitle}" permanently?`)) {
                 deleteSession(session.id);
             }
         };
@@ -1092,7 +1117,7 @@ async function saveHistory() {
 
 async function loadProjectOverview() {
     try {
-        const res = await fetch("/api/project-overview");
+        const res = await fetch(`/api/project-overview?t=${Date.now()}`, { cache: "no-store" });
         const data = await res.json();
         const contentDiv = document.getElementById("project-overview-content");
         if (contentDiv) {
@@ -1551,3 +1576,99 @@ if (attachBtn) {
         }
     });
 }
+
+// --- GEM EASTER EGG ---
+document.addEventListener("DOMContentLoaded", () => {
+    const brandTitle = document.getElementById("brand-title");
+    if (brandTitle) {
+        brandTitle.addEventListener("click", () => {
+            brandTitle.classList.toggle("gem-glow");
+        });
+    }
+});
+
+// --- SWARM PLAYGROUND CONTROLLER ---
+document.addEventListener("DOMContentLoaded", () => {
+    const runSwarmBtn = document.getElementById("run-swarm-btn");
+    const swarmPromptInput = document.getElementById("swarm-prompt-input");
+    const swarmModelSelector = document.getElementById("swarm-model-selector");
+    const swarmRunningStatus = document.getElementById("swarm-running-status");
+    const swarmResultsSection = document.getElementById("swarm-results-section");
+
+    // Populate swarm selector when main modelSelector has options
+    const populateSwarmSelector = () => {
+        if (!swarmModelSelector) return;
+        swarmModelSelector.innerHTML = "";
+        
+        // Match options in main modelSelector
+        const mainOptions = document.querySelectorAll("#model-selector option");
+        mainOptions.forEach(opt => {
+            if (opt.value) { // Skip empty option
+                const newOpt = document.createElement("option");
+                newOpt.value = opt.value;
+                newOpt.textContent = opt.textContent;
+                newOpt.selected = opt.selected;
+                swarmModelSelector.appendChild(newOpt);
+            }
+        });
+        
+        // Also add the default cloud open-source option
+        const cloudOpt = document.createElement("option");
+        cloudOpt.value = "Qwen/Qwen2.5-Coder-7B-Instruct";
+        cloudOpt.textContent = "Qwen 2.5 Coder 7B (Free HF Cloud API)";
+        swarmModelSelector.insertBefore(cloudOpt, swarmModelSelector.firstChild);
+        
+        // Default to cloud option for easy testing
+        swarmModelSelector.value = "Qwen/Qwen2.5-Coder-7B-Instruct";
+    };
+
+    // Watch for model updates
+    const observer = new MutationObserver(populateSwarmSelector);
+    const target = document.getElementById("model-selector");
+    if (target) {
+        observer.observe(target, { childList: true });
+        // Initial population
+        setTimeout(populateSwarmSelector, 1000);
+    }
+
+    if (runSwarmBtn) {
+        runSwarmBtn.addEventListener("click", async () => {
+            const prompt = swarmPromptInput.value.trim();
+            const modelId = swarmModelSelector.value;
+            
+            if (!prompt) {
+                alert("Please enter a benchmark prompt.");
+                return;
+            }
+            
+            runSwarmBtn.disabled = true;
+            swarmRunningStatus.classList.remove("hidden");
+            swarmResultsSection.innerHTML = '<div style="opacity: 0.6; padding: 12px; background: var(--bg-hover); border-radius: 6px;">Executing concurrent subagents...</div>';
+            
+            try {
+                const response = await fetch("/api/swarm/run", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt, model_id: modelId })
+                });
+                const data = await response.json();
+                
+                if (data.status === "success" && data.report) {
+                    swarmResultsSection.innerHTML = `
+                        <div style="margin-bottom: 8px; font-weight: bold; color: var(--accent-color);">Benchmark Execution Complete!</div>
+                        <div class="markdown-body" style="padding: 12px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border-color); overflow-x: auto;">
+                            ${parseMarkdown(data.report)}
+                        </div>
+                    `;
+                } else {
+                    swarmResultsSection.innerHTML = `<div style="color: var(--color-error); padding: 12px;">Error: ${data.message || "Execution failed."}</div>`;
+                }
+            } catch (err) {
+                swarmResultsSection.innerHTML = `<div style="color: var(--color-error); padding: 12px;">Network/Server Error: ${err.message}</div>`;
+            } finally {
+                runSwarmBtn.disabled = false;
+                swarmRunningStatus.classList.add("hidden");
+            }
+        });
+    }
+});

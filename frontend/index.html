@@ -72,7 +72,7 @@
         <main class="chat-panel">
             <header class="chat-header">
                 <div class="header-info">
-                    <h2>Antigravity MLX</h2>
+                    <h2 id="brand-title">Antigravity MLX</h2>
                     <p id="active-model-header">No active model loaded.</p>
                 </div>
             </header>
@@ -155,12 +155,13 @@
             </footer>
         </main>
 
-        <!-- Right Sidebar for Project Overview / Review Changes -->
+        <!-- Right Sidebar for Project Overview / Review Changes / Swarm Playground -->
         <aside class="right-sidebar">
             <header class="right-sidebar-header">
                 <div class="sidebar-tabs">
                     <button class="sidebar-tab active" data-target="project-overview-content">Overview</button>
                     <button class="sidebar-tab" data-target="review-changes-content" id="review-changes-tab">Review Changes</button>
+                    <button class="sidebar-tab" data-target="swarm-playground-content" id="swarm-playground-tab">Swarm Playground</button>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <button id="copy-overview-btn" title="Copy Content" class="icon-btn">
@@ -184,6 +185,30 @@
             
             <div class="right-sidebar-content tab-content" id="review-changes-content">
                 <div class="empty-state">No changes to review.</div>
+            </div>
+
+            <div class="right-sidebar-content tab-content" id="swarm-playground-content" style="padding: 16px; display: flex; flex-direction: column; gap: 12px; height: calc(100% - 50px); overflow-y: auto;">
+                <h3 style="margin-top: 0; color: var(--accent-color);">Swarm & Model Benchmarking</h3>
+                <p style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 8px;">Run a prompt against multiple subagent personas concurrently and evaluate the results.</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label style="font-weight: 600; font-size: 0.85rem;">Benchmark Prompt</label>
+                    <textarea id="swarm-prompt-input" rows="3" placeholder="e.g. Write a Python function to check if a number is prime." style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-color); font-family: inherit; resize: vertical;"></textarea>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label style="font-weight: 600; font-size: 0.85rem;">Select Base Model</label>
+                    <select id="swarm-model-selector" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-color); font-family: inherit;"></select>
+                </div>
+
+                <button id="run-swarm-btn" style="padding: 10px; border-radius: 6px; background: var(--accent-color); color: #fff; border: none; font-weight: 600; cursor: pointer; transition: opacity 0.2s;">Run Multi-Agent Swarm</button>
+                
+                <div id="swarm-running-status" class="hidden" style="padding: 8px; border-radius: 6px; background: var(--bg-hover); font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 14px; height: 14px; border: 2px solid var(--text-color); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <span>Swarm is running online / offline fallback...</span>
+                </div>
+
+                <div id="swarm-results-section" style="margin-top: 12px; display: flex; flex-direction: column; gap: 12px; font-size: 0.9rem;"></div>
             </div>
         </aside>
     </div>

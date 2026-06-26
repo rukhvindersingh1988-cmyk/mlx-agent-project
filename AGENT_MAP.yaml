@@ -1,0 +1,19 @@
+project: mlx_agent
+version: 3.0.1
+intent: Agent-First High-Reasoning Repository
+stack:
+- mlx
+- linux
+- python
+semantic_map:
+  .agent/manifest.json: Core agent protocol and project metadata.
+  .agent/rules/: Agent behavioral constraints and coding standards.
+  .agent/workflows/: Step-by-step guides for common dev tasks.
+  .agent/skills/: Executable tools and automation scripts.
+  .agent/tools.json: Declarative tool permissions and guardrails.
+  docs/: Architectural manifest and decision records.
+  tests/: Pytest suite for quality assurance.
+  src/: Primary source code directory.
+  .github/workflows/: CI/CD pipeline definitions.
+  scripts/sentinel.py: Security and compliance watchdog.
+  README.md: Human-readable project overview.

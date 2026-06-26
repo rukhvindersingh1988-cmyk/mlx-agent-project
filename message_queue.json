@@ -1,0 +1,40 @@
+{
+  "SecurityAuditor": [
+    {
+      "from": "MainAgent",
+      "message": "Review the sandboxing system in backend/tools.py and output a list of potential security improvements."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Review the sandboxing system in backend/tools.py. Do not install Homebrew or ripgrep. Simply list the directory contents using Python or find, and wait 30 seconds before checking your inbox for the auditor's findings."
+    }
+  ],
+  "MainAgent": [],
+  "CodeArchitect": [
+    {
+      "from": "MainAgent",
+      "message": "Write a clean, well-documented Python script for a CLI-based Task Manager."
+    }
+  ],
+  "DataGenerator": [],
+  "DataValidator": [
+    {
+      "from": "MainAgent",
+      "message": "Inspect the created users.json file format and write a validation report to a file named validation.log."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Inspect the created users.json file format and write a validation report to a file named validation.log."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Validate users.json and write a report to validation.log."
+    }
+  ],
+  "MathBot": [
+    {
+      "from": "MainAgent",
+      "message": "Calculate the square root of 144"
+    }
+  ]
+}

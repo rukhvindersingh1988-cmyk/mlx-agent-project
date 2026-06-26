@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "charliermarsh.ruff",
+        "christian-kohler.path-intellisense",
+        "donjayamanne.githistory",
+        "eamodio.gitlens",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "pkief.material-icon-theme",
+        "usernamehw.errorlens"
+    ]
+}

@@ -25,7 +25,7 @@ class MLXRunner:
         self.processor = None       # For VLMs (handles image+text)
         self.current_model_id: Optional[str] = None
         self.is_vlm: bool = False
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def load_model(self, model_id: str):
         with self.lock:
@@ -74,114 +74,127 @@ class MLXRunner:
                 gc.collect()
                 raise e
 
-    def generate_stream(self, model_id: str, prompt: Any, temp: float = 0.7, max_tokens: int = 2048, stop_sequences: list = None, image_path: Optional[str] = None) -> Generator[str, None, None]:
+    def generate_stream(self, model_id: str, prompt: Any, temp: float = 0.7, max_tokens: int = 2048, stop_sequences: list = None, image_path: Optional[str] = None, cancel_event: threading.Event = None) -> Generator[str, None, None]:
         """Loads the model if needed and yields generated tokens one by one.
-        Supports stop_sequences and optional image_path for VLMs."""
-        model, tokenizer = self.load_model(model_id)
-        
-        # Construct sampler for temperature
-        sampler = make_sampler(temp=temp)
-        
-        if stop_sequences is None:
-            stop_sequences = []
-        
-        accumulated = ""
+        Supports stop_sequences and optional image_path for VLMs.
+        If cancel_event is provided and set, it aborts instantly."""
+        self.lock.acquire()
+            
+        if cancel_event and cancel_event.is_set():
+            self.lock.release()
+            return
         
         try:
-            # VLM path: use mlx_vlm for image+text generation or text-only on a VLM model
-            if self.is_vlm:
-                try:
-                    from mlx_vlm import stream_generate as vlm_stream_generate
-                    from mlx_vlm.prompt_utils import apply_chat_template
-                    from mlx_vlm.utils import load_config
+            model, tokenizer = self.load_model(model_id)
+            
+            # Construct sampler for temperature
+            sampler = make_sampler(temp=temp)
+        
+            if stop_sequences is None:
+                stop_sequences = []
+            
+            accumulated = ""
+            
+            try:
+                # VLM path: use mlx_vlm for image+text generation or text-only on a VLM model
+                if self.is_vlm:
+                    try:
+                        from mlx_vlm import stream_generate as vlm_stream_generate
+                        from mlx_vlm.prompt_utils import apply_chat_template
+                        from mlx_vlm.utils import load_config
 
-                    config = load_config(model_id)
-                    num_images = 1 if (image_path and os.path.exists(image_path)) else 0
-                    
-                    # Prevent Metal OOM by downscaling extremely large images (like 4k screenshots)
-                    if num_images > 0:
-                        try:
-                            from PIL import Image
-                            import tempfile
-                            with Image.open(image_path) as img:
-                                img.thumbnail((768, 768)) # Resize, maintains aspect ratio
-                                tmp_img_path = os.path.join(tempfile.gettempdir(), "mlx_vlm_resized.jpg")
-                                img.convert('RGB').save(tmp_img_path, "JPEG", quality=85)
-                                image_path = tmp_img_path
-                        except Exception as e:
-                            print(f"[MLX] Warning: Failed to resize image: {e}")
-                    
-                    # If prompt is already formatted string, use it directly. Otherwise template it.
-                    if isinstance(prompt, list):
-                        formatted_prompt = apply_chat_template(
-                            self.processor, config, prompt, num_images=num_images
-                        )
-                    else:
-                        formatted_prompt = prompt
-
-                    for response in vlm_stream_generate(
-                        self.model,
-                        self.processor,
-                        formatted_prompt,
-                        image=image_path if num_images > 0 else None,
-                        max_tokens=max_tokens,
-                        temperature=temp,
-                        verbose=False
-                    ):
-                        token = response.text
-                        accumulated += token
+                        config = load_config(model_id)
+                        num_images = 1 if (image_path and os.path.exists(image_path)) else 0
                         
-                        # Check for stop sequences
-                        should_stop = False
-                        for stop_seq in stop_sequences:
-                            if stop_seq in accumulated:
-                                idx = accumulated.index(stop_seq) + len(stop_seq)
-                                already_yielded = len(accumulated) - len(token)
-                                remaining = accumulated[already_yielded:idx]
-                                if remaining:
-                                    yield remaining
-                                should_stop = True
+                        # Prevent Metal OOM by downscaling extremely large images (like 4k screenshots)
+                        if num_images > 0:
+                            try:
+                                from PIL import Image
+                                import tempfile
+                                with Image.open(image_path) as img:
+                                    img.thumbnail((768, 768)) # Resize, maintains aspect ratio
+                                    tmp_img_path = os.path.join(tempfile.gettempdir(), "mlx_vlm_resized.jpg")
+                                    img.convert('RGB').save(tmp_img_path, "JPEG", quality=85)
+                                    image_path = tmp_img_path
+                            except Exception as e:
+                                print(f"[MLX] Warning: Failed to resize image: {e}")
+                        
+                        # If prompt is already formatted string, use it directly. Otherwise template it.
+                        if isinstance(prompt, list):
+                            formatted_prompt = apply_chat_template(
+                                self.processor, config, prompt, num_images=num_images
+                            )
+                        else:
+                            formatted_prompt = prompt
+
+                        for response in vlm_stream_generate(
+                            self.model,
+                            self.processor,
+                            formatted_prompt,
+                            image=image_path if num_images > 0 else None,
+                            max_tokens=max_tokens,
+                            temperature=temp,
+                            verbose=False
+                        ):
+                            if cancel_event and cancel_event.is_set():
                                 break
-                        
-                        if should_stop:
-                            break
-                        
-                        yield token
-                    return
-                except Exception as e:
-                    yield f"[VLM Generation Error: {str(e)}]"
-                    return
+                            token = response.text
+                            accumulated += token
+                            
+                            # Check for stop sequences
+                            should_stop = False
+                            for stop_seq in stop_sequences:
+                                if stop_seq in accumulated:
+                                    idx = accumulated.index(stop_seq) + len(stop_seq)
+                                    already_yielded = len(accumulated) - len(token)
+                                    remaining = accumulated[already_yielded:idx]
+                                    if remaining:
+                                        yield remaining
+                                    should_stop = True
+                                    break
+                            
+                            if should_stop:
+                                break
+                            
+                            yield token
+                        return
+                    except Exception as e:
+                        yield f"[VLM Generation Error: {str(e)}]"
+                        return
 
-            # Standard text-only model generation using mlx_lm
-            for response in stream_generate(
-                model=model,
-                tokenizer=tokenizer,
-                prompt=prompt if isinstance(prompt, str) else tokenizer.apply_chat_template(prompt, add_generation_prompt=True),
-                sampler=sampler,
-                max_tokens=max_tokens
-            ):
-                token = response.text
-                accumulated += token
-                
-                # Check for stop sequences
-                should_stop = False
-                for stop_seq in stop_sequences:
-                    if stop_seq in accumulated:
-                        idx = accumulated.index(stop_seq) + len(stop_seq)
-                        already_yielded = len(accumulated) - len(token)
-                        remaining = accumulated[already_yielded:idx]
-                        if remaining:
-                            yield remaining
-                        should_stop = True
+                # Standard text-only model generation using mlx_lm
+                for response in stream_generate(
+                    model=model,
+                    tokenizer=tokenizer,
+                    prompt=prompt if isinstance(prompt, str) else tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True),
+                    sampler=sampler,
+                    max_tokens=max_tokens
+                ):
+                    if cancel_event and cancel_event.is_set():
                         break
-                
-                if should_stop:
-                    break
-                
-                yield token
-        except Exception as e:
-            yield f"\n[MLX Generation Error: {str(e)}]"
-
+                    token = response.text
+                    accumulated += token
+                    
+                    # Check for stop sequences
+                    should_stop = False
+                    for stop_seq in stop_sequences:
+                        if stop_seq in accumulated:
+                            idx = accumulated.index(stop_seq) + len(stop_seq)
+                            already_yielded = len(accumulated) - len(token)
+                            remaining = accumulated[already_yielded:idx]
+                            if remaining:
+                                yield remaining
+                            should_stop = True
+                            break
+                    
+                    if should_stop:
+                        break
+                    
+                    yield token
+            except Exception as e:
+                yield f"\n[MLX Generation Error: {str(e)}]"
+        finally:
+            self.lock.release()
 
 # Singleton runner
 runner = MLXRunner()

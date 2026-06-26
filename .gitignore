@@ -1,0 +1,28 @@
+# --- Universal ---
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+.env
+.env.*
+!.env.example
+
+# --- Agent / AI (Full Privacy) ---
+.agent/
+context/
+antigravity_setup.log
+
+# --- Linux ---
+*~
+.fuse_hidden*
+
+# --- Python ---
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/

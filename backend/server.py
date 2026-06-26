@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import asyncio
 from typing import Dict, List, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -69,10 +70,18 @@ class SpeakRequest(BaseModel):
 class CopyRequest(BaseModel):
     text: str
 
+class SiriRequest(BaseModel):
+    prompt: str
+    model_id: str = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+
 class ChatHistoryRequest(BaseModel):
     session_id: str
     title: str = "New Chat"
     history: List[Dict[str, Any]]
+
+class SwarmRunRequest(BaseModel):
+    prompt: str
+    model_id: str
 
 # API Routes
 
@@ -164,6 +173,27 @@ def set_gmail_config_route(req: GmailConfigRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/swarm/run")
+async def run_swarm_route(req: SwarmRunRequest):
+    """Run the swarm multi-agent benchmark on the given prompt."""
+    try:
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scripts"))
+        from swarm_benchmark import run_benchmarks
+        
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, run_benchmarks, req.prompt, req.model_id)
+        
+        report_path = os.path.join(get_workspace(), "swarm_benchmark_report.md")
+        if os.path.exists(report_path):
+            with open(report_path, "r", encoding="utf-8") as f:
+                report_md = f.read()
+            return {"status": "success", "report": report_md}
+        else:
+            return {"status": "error", "message": "Benchmark report was not generated."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 import re
 
 @app.post("/api/speak")
@@ -201,10 +231,43 @@ def copy_to_clipboard_route(req: CopyRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/siri")
+async def siri_route(req: SiriRequest):
+    """REST endpoint for Siri Shortcuts to speak directly to the agent."""
+    AGENT_STATE["stop_requested"] = False
+    
+    final_text = []
+    
+    async def mock_ws_callback(packet: Dict[str, Any]):
+        if packet.get("type") == "final_response":
+            final_text.append(packet.get("text", ""))
+        elif packet.get("type") == "error":
+            final_text.append(f"Error: {packet.get('message')}")
+
+    try:
+        await run_agent_loop(
+            user_prompt=req.prompt,
+            model_id=req.model_id,
+            ws_send_callback=mock_ws_callback
+        )
+        
+        response_text = "".join(final_text)
+        if not response_text:
+            response_text = "I completed the task but have no spoken response."
+            
+        return {"status": "success", "response": response_text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/stop")
 def stop_agent_route():
     """Interrupt the currently running agent loop."""
     AGENT_STATE["stop_requested"] = True
+    try:
+        from .tools import kill_active_subprocesses
+        kill_active_subprocesses()
+    except Exception as e:
+        print(f"[Stop] Error killing active subprocesses: {e}")
     return {"status": "success", "message": "Stop signal sent"}
 
 @app.get("/api/system-stats")
@@ -380,15 +443,23 @@ def update_session_metadata(session_id: str, req: SessionMetadataRequest):
 @app.get("/api/project-overview")
 def get_project_overview_route():
     """Retrieve project_overview.md from the workspace if it exists."""
+    from fastapi.responses import JSONResponse
     workspace = get_workspace()
     overview_path = os.path.join(workspace, "project_overview.md")
+    
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+
     if os.path.exists(overview_path):
         try:
             with open(overview_path, "r", encoding="utf-8") as f:
-                return {"content": f.read()}
+                return JSONResponse(content={"content": f.read()}, headers=headers)
         except Exception as e:
-            return {"content": f"Error reading overview: {str(e)}"}
-    return {"content": "No project_overview.md found in the active workspace. Let the agent know if you'd like to create one!"}
+            return JSONResponse(content={"content": f"Error reading overview: {str(e)}"}, headers=headers)
+    return JSONResponse(content={"content": "No project_overview.md found in the active workspace. Let the agent know if you'd like to create one!"}, headers=headers)
 
 # WebSocket Endpoint for Chat & Agent execution
 
@@ -397,12 +468,30 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WebSocket] Client connected.")
     
+    incoming_queue = asyncio.Queue()
+    
+    async def read_ws():
+        try:
+            while True:
+                data_str = await websocket.receive_text()
+                await incoming_queue.put(json.loads(data_str))
+        except WebSocketDisconnect:
+            print("[WebSocket] Reader disconnected.")
+        except Exception as e:
+            print(f"[WebSocket] Reader exception: {e}")
+            
+    reader_task = asyncio.create_task(read_ws())
+    
     try:
         while True:
-            # Wait for client prompt details
-            data_str = await websocket.receive_text()
-            data = json.loads(data_str)
+            # Wait for client prompt details from the queue
+            data = await incoming_queue.get()
             
+            # If it's a user injection during active generation, ignore it here
+            # (it is handled directly inside run_agent_loop)
+            if data.get("type") == "user_injection":
+                continue
+                
             prompt = data.get("prompt")
             model_id = data.get("model_id")
             temperature = float(data.get("temperature", 0.2))
@@ -419,14 +508,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             print(f"[WebSocket] User Prompt: '{prompt[:50]}...' using model: {model_id}")
             
-            # Start the agent execution loop
+            # Start the agent execution loop, passing the incoming queue for steering
             await run_agent_loop(
                 user_prompt=prompt,
                 model_id=model_id,
                 ws_send_callback=ws_sender,
                 history=chat_history,
                 temp=temperature,
-                image_path=image_path
+                image_path=image_path,
+                incoming_queue=incoming_queue
             )
             
     except WebSocketDisconnect:
@@ -439,6 +529,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": f"Server connection error: {str(e)}"})
         except:
             pass
+    finally:
+        reader_task.cancel()
 
 # Serve static frontend files
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")

@@ -497,6 +497,7 @@ input[type="range"]::-webkit-slider-thumb {
     height: 100%;
     background-color: var(--bg-primary);
     position: relative;
+    min-width: 0;
 }
 
 .chat-header {
@@ -793,6 +794,8 @@ input[type="range"]::-webkit-slider-thumb {
     font-size: 11px;
     color: var(--text-secondary);
     white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
     background-color: rgba(0, 0, 0, 0.2);
 }
 
@@ -1062,6 +1065,23 @@ input[type="range"]::-webkit-slider-thumb {
 /* Visibility classes */
 .hidden {
     display: none !important;
+}
+
+/* GEM EASTER EGG */
+@keyframes gemGlow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.gem-glow {
+    background: linear-gradient(270deg, #ff0055, #00eeff, #7700ff, #ffaa00);
+    background-size: 800% 800%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gemGlow 3s ease infinite;
+    text-shadow: 0 0 20px rgba(0, 238, 255, 0.4);
+    transition: all 0.5s ease;
 }
 
 .markdown-body pre code {
@@ -1364,4 +1384,14 @@ input[type="range"]::-webkit-slider-thumb {
     text-align: center;
     padding: 40px 20px;
     font-size: 13px;
+}
+
+/* Allow text selection in the chat panel, message bubbles, and code blocks */
+.chat-panel, .message-bubble, .bubble-content, pre, code, p, span, h1, h2, h3, h4, h5, h6, .tool-output-content {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+}
+
+.bubble-content, .bubble-content *, pre, code, .tool-output-content {
+    cursor: text;
 }
