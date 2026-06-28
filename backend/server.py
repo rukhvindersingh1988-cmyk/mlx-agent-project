@@ -201,9 +201,30 @@ def restart_server_route():
     print("[Server] Restart requested via UI. Rebooting application...")
     import sys
     import os
-    # We delay execution slightly so the HTTP response can be sent first
+    import subprocess
+
     def do_restart():
-        os.execv(sys.executable, ['python'] + sys.argv)
+        # Clean shutdown and spin up a new process
+        try:
+            # Get the exact command line args used to run this process
+            # In macOS/Linux, we can read/exec the current python entry point.
+            # If we're running inside a virtual environment uvicorn runner, use that:
+            args = sys.argv.copy()
+            # If sys.argv is just ['backend.server:app'] or similar (running via uvicorn),
+            # we re-execute uvicorn cleanly.
+            if "uvicorn" in sys.executable or (len(args) > 0 and "uvicorn" in args[0]):
+                os.execv(sys.executable, [sys.executable] + args)
+            else:
+                # Fallback: execute uvicorn directly
+                venv_uvicorn = os.path.join(os.path.dirname(sys.executable), "uvicorn")
+                if os.path.exists(venv_uvicorn):
+                    os.execv(venv_uvicorn, [venv_uvicorn, "backend.server:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "info"])
+                else:
+                    os.execv(sys.executable, [sys.executable, "-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "info"])
+        except Exception as e:
+            print(f"[Server] Failed to restart cleanly: {e}")
+            # Absolute fallback: exit and let the wrapper shell script restart us
+            sys.exit(1)
     
     import threading
     threading.Timer(0.5, do_restart).start()
