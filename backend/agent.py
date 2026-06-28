@@ -524,7 +524,10 @@ def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
     if func_match:
         t_name = func_match.group(1)
         t_arg = func_match.group(2)
-        from .tools import TOOLS_MANIFEST
+        try:
+            from tools import TOOLS_MANIFEST
+        except ImportError:
+            from .tools import TOOLS_MANIFEST
         for t in TOOLS_MANIFEST:
             if t["name"] == t_name:
                 params = list(t["parameters"].keys())
