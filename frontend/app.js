@@ -92,7 +92,20 @@ function setupEventListeners() {
             } catch (err) {
                 console.error("Restart API triggered.", err);
             }
-            // The python backend will os.execv, causing the window to instantly close and reopen.
+            // Poll system stats endpoint until it comes back online, then reload window
+            setTimeout(() => {
+                const checkInterval = setInterval(async () => {
+                    try {
+                        const res = await fetch("/api/system-stats");
+                        if (res.ok) {
+                            clearInterval(checkInterval);
+                            window.location.reload();
+                        }
+                    } catch (e) {
+                        // Keep polling until online
+                    }
+                }, 1000);
+            }, 1000);
         });
     }
 
