@@ -1518,6 +1518,56 @@ async def run_agent_loop(
                 continue
 
             history.append({"role": "assistant", "content": raw_output})
+            
+            # Check if this final conversational response looks like a cop-out / non-actionable text
+            # e.g., if the user asked to "Check any improvement required" or "fix this file" and the agent just says
+            # "The directory contains X, use read_file to inspect" instead of actually doing it.
+            final_lower = final.lower().strip()
+            is_cop_out = (
+                "use the" in final_lower or
+                "use the read_file" in final_lower or
+                "use the grep_search" in final_lower or
+                "you can use" in final_lower or
+                "to inspect" in final_lower or
+                "please use" in final_lower
+            ) and any(w in user_prompt.lower() for w in ["check", "fix", "find", "write", "audit", "test", "inspect"])
+
+            if is_cop_out:
+                print("[Agent] Conversational cop-out detected in final answer. Escalating task to subagent automatically...")
+                await ws_send_callback({
+                    "type": "token",
+                    "text": "\n\n⚠️ *[MainAgent provided a non-actionable response. Escalating task to specialized Subagent swarm to execute actions...]*\n\n"
+                })
+                
+                try:
+                    from tools import invoke_subagent, check_inbox
+                    rescue_task = (
+                        f"The main agent gave a conversational reply: '{final}' instead of executing tool actions. "
+                        f"Please complete this original task autonomously: '{user_prompt}'."
+                    )
+                    invoke_subagent("RescueWorker", rescue_task)
+                    
+                    # Wait for completion (timeout 30s)
+                    for _ in range(30):
+                        await asyncio.sleep(1)
+                        inbox = check_inbox("MainAgent")
+                        if "RescueWorker" in inbox:
+                            lines = inbox.split("\n")
+                            result_message = ""
+                            for line in lines:
+                                if "RescueWorker" in line or result_message:
+                                    result_message += line + "\n"
+                            if not result_message:
+                                result_message = inbox
+                                
+                            await ws_send_callback({"type": "final_response", "text": f"🛡️ **Subagent Rescue Completed!**\n\n{result_message}"})
+                            save_memory(workspace, user_prompt, result_message)
+                            return
+                    
+                    # If timeout, fall through to output the conversational answer
+                except Exception as rescue_err:
+                    print(f"[Agent] Conversational rescue failed: {rescue_err}")
+
             await ws_send_callback({"type": "final_response", "text": final})
             print("[Agent] Done.")
             # Persistent Memory: save conversation summary before returning
