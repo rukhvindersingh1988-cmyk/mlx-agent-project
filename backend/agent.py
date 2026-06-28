@@ -1321,18 +1321,54 @@ async def run_agent_loop(
                 except Exception as ex:
                     print(f"[Agent Learnings] Failed to save error trace: {ex}")
 
-                # Force bail after 3 consecutive failures
+                # Auto-escalate to subagent after 3 consecutive failures
                 if consecutive_fails >= 3:
-                    error_summary = (
-                        f"I encountered 3 consecutive tool errors and could not complete the task.\n\n"
-                        f"**Last error** (tool: `{tool_name}`):\n```\n{tool_output[:1000]}\n```\n\n"
-                        f"Please try rephrasing your request or check if the target files/commands exist."
-                    )
-                    await ws_send_callback({"type": "final_response", "text": error_summary})
-                    print("[Agent] Forced final_answer after 3 consecutive tool failures.")
-                    # Save memory before returning
-                    save_memory(workspace, user_prompt, error_summary)
-                    return
+                    print("[Agent] Forced subagent rescue delegation after 3 consecutive tool failures.")
+                    await ws_send_callback({
+                        "type": "token",
+                        "text": "\n\n⚠️ *[MainAgent encountered consecutive tool errors. Delegating task to specialized Subagent swarm for recovery...]*\n\n"
+                    })
+                    
+                    try:
+                        from tools import invoke_subagent, check_inbox
+                        # Spawns a rescue worker subagent in the background to handle the task
+                        rescue_task = (
+                            f"The main agent failed with the error: '{tool_output[:500]}' while attempting '{tool_name}' on the task: '{user_prompt}'. "
+                            f"Please complete this task autonomously using your local tools and file access."
+                        )
+                        invoke_subagent("RescueWorker", rescue_task)
+                        
+                        # Wait for completion (timeout 30s)
+                        for _ in range(30):
+                            await asyncio.sleep(1)
+                            inbox = check_inbox("MainAgent")
+                            if "RescueWorker" in inbox:
+                                # Retrieve messages
+                                lines = inbox.split("\n")
+                                result_message = ""
+                                for line in lines:
+                                    if "RescueWorker" in line or result_message:
+                                        result_message += line + "\n"
+                                if not result_message:
+                                    result_message = inbox
+                                    
+                                await ws_send_callback({"type": "final_response", "text": f"🛡️ **Subagent Rescue Completed!**\n\n{result_message}"})
+                                save_memory(workspace, user_prompt, result_message)
+                                return
+                        
+                        # Timeout fallback
+                        fallback_msg = f"Rescue subagent timed out. Core error was: {tool_output[:400]}"
+                        await ws_send_callback({"type": "final_response", "text": fallback_msg})
+                        return
+                    except Exception as rescue_err:
+                        error_summary = (
+                            f"I encountered 3 consecutive tool errors and could not complete the task.\n\n"
+                            f"**Last error** (tool: `{tool_name}`):\n```\n{tool_output[:1000]}\n```\n\n"
+                            f"Rescue worker failed: {rescue_err}"
+                        )
+                        await ws_send_callback({"type": "final_response", "text": error_summary})
+                        save_memory(workspace, user_prompt, error_summary)
+                        return
             else:
                 consecutive_fails = 0  # Reset on success
 
