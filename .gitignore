@@ -32,3 +32,20 @@ secrets.json
 secrets.json.bak
 *.token
 .env
+
+# --- Local Databases and States ---
+chat_sessions.json
+message_queue.json
+memory_bank.json
+subagent_status.json
+agent_learnings.json
+user_dictionary.json
+gmail_config.json
+
+# --- Log Files ---
+*.log
+server_stdout.log
+server_stderr.log
+server.log
+download.log
+antigravity_setup.log

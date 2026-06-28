@@ -5,7 +5,7 @@ echo "   Nightly MLX LoRA Fine-Tuning"
 echo "========================================="
 
 # Ensure we are in the correct directory
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 LOG_FILE="training_data/nightly_train.log"
 ERR_FILE="training_data/nightly_train_error.log"

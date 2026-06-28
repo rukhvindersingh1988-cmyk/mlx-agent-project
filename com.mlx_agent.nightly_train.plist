@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/nightly_train.sh</string>
+        <string>/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/scripts/nightly_train.sh</string>
     </array>
     
     <key>StandardOutPath</key>

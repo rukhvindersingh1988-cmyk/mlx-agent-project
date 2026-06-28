@@ -1,32 +1,35 @@
-# webscraper
+# WebScraper Package
 
-A Python package for web scraping.
+A simple Python package for web scraping using requests and BeautifulSoup.
 
-## Description
-webscraper is a simple and easy-to-use package for scraping websites. It uses requests and beautifulsoup4 under the hood.
-
-## Install Instructions
-To install webscraper, run the following command:
+## Installation
 ```bash
 pip install requests beautifulsoup4
 ```
-And then install the package itself using pip (once it's available).
 
-## Usage Example
+## Usage
 ```python
 from webscraper import WebScraper
 
+# Initialize scraper
 scraper = WebScraper()
-result = scraper.scrape('https://www.example.com')
+
+# Scrape a webpage
+result = scraper.scrape('https://example.com')
 print(result)
 ```
-## API Docs
-### WebScraper.scrape()
-#### Description
-Scrape a website and return the HTML content.
-#### Parameters
-* `url` (str): The URL of the website to scrape.
-#### Returns
-* `str`: The HTML content of the website.
-#### Raises
-* `requests.RequestException`: If there is an error with the request.
+
+## API Documentation
+
+### WebScraper.scrape(url: str) -> dict
+Scrapes the given URL and returns structured data.
+
+Parameters:
+- url (str): The URL to scrape
+
+Returns:
+- dict: Contains:
+  - 'status': HTTP status code
+  - 'title': Page title
+  - 'links': List of found URLs
+  - 'text': Main page text content

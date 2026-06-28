@@ -1,28 +1,54 @@
 import pytest
-from unittest.mock import patch
-from your_module import WebScraper  # replace 'your_module' with the actual module name
-import requests
+from unittest.mock import patch, Mock
+from web_scraper.scraper import WebScraper
 
-@pytest.fixture
-def test_scraper():
-    return WebScraper()
 
-@patch('requests.get')
-def test_scrape(test_get, test_scraper):
-    test_get.return_value.text = '<html><head><title>Test Title</title></head><body><a href="https://www.test.com">Test Link</a></body></html>'
-    result = test_scraper.scrape('https://www.test.com')
-    assert result['title'] == 'Test Title'
-    assert 'https://www.test.com' in result['links']
+def mock_response(status_code=200, content=b''):
+    mock = Mock()
+    mock.status_code = status_code
+    mock.content = content
+    return mock
 
 @patch('requests.get')
-def test_scrape_empty(test_get, test_scraper):
-    test_get.return_value.text = ''
-    result = test_scraper.scrape('https://www.test.com')
-    assert result['title'] == ''
-    assert result['links'] == []
+def test_scrape(mock_get):
+    # Arrange
+    mock_get.return_value = mock_response(
+        content=b'<html><head><title>Test Page</title></head><body><a href="https://example.com">Link</a></body></html>'
+    )
+    scraper = WebScraper()
+
+    # Act
+    result = scraper.scrape('https://example.com')
+
+    # Assert
+    assert result == {
+        'title': 'Test Page',
+        'links': ['https://example.com']
+    }
 
 @patch('requests.get')
-def test_scrape_exception(test_get, test_scraper):
-    test_get.side_effect = requests.exceptions.RequestException
-    with pytest.raises(Exception):
-        test_scraper.scrape('https://www.test.com')
+def test_scrape_no_links(mock_get):
+    # Arrange
+    mock_get.return_value = mock_response(
+        content=b'<html><head><title>Test Page</title></head><body></body></html>'
+    )
+    scraper = WebScraper()
+
+    # Act
+    result = scraper.scrape('https://example.com')
+
+    # Assert
+    assert result == {
+        'title': 'Test Page',
+        'links': []
+    }
+
+@patch('requests.get')
+def test_scrape_404(mock_get):
+    # Arrange
+    mock_get.return_value = mock_response(status_code=404)
+    scraper = WebScraper()
+
+    # Act & Assert
+    with pytest.raises(Exception, match='Failed to scrape'):
+        scraper.scrape('https://example.com')
