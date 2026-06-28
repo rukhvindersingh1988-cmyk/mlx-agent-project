@@ -983,12 +983,17 @@ async def run_agent_loop(
                                 print(f"[Agent] Repetition loop detected (period={period})! Aborting generation early to prevent UI hang.")
                                 cancel_event.set()
                                 break
+                        
+                        # Guard against repeating backtick-only code block structures like "```python\n```\n```python"
+                        if accumulated.count("```python") >= 5 and len(re.sub(r'```python\n```\n?', '', accumulated).strip()) < 50:
+                            print("[Agent] Detected repeating empty code block loops. Aborting generation early.")
+                            cancel_event.set()
 
                     # Anti-Hallucination: If code models try to write raw markdown blocks (e.g. ```python, ```json)
                     # directly without thoughts or tool calls, abort early to force correct XML/JSON agent behavior.
                     stripped_accum = accumulated.strip()
                     if len(stripped_accum) >= 9 and stripped_accum.startswith("```"):
-                        if not is_gemma and stripped_accum.startswith("```json"):
+                        if not is_gemma and (stripped_accum.startswith("```json") or stripped_accum.startswith("```python")):
                             # This is valid for non-gemma models using markdown
                             pass
                         else:

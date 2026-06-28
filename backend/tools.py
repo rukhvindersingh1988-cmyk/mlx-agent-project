@@ -625,40 +625,46 @@ def _subagent_thread_runner(role: str, task: str):
         subagent_result = {"text": ""}
         success = False
         
-        # 1. Try free online open-source models first to prevent GPU memory/thread conflicts
+        # 1. Try cloud API integration first if we have keys or a cloud model is selected
         try:
-            from huggingface_hub import InferenceClient
-            token = os.environ.get("HF_TOKEN")
-            if not token:
-                try:
-                    with open(resolve_path("secrets.json"), "r") as f:
-                        token = json.load(f).get("hf_token")
-                except:
-                    pass
+            from cloud_runner import is_cloud_model, stream_cloud
+            # Read active model ID from server settings if possible
+            active_model_id = "groq/llama-3.3-70b"  # Default to a high-quality cloud model
             
-            online_model = "Qwen/Qwen2.5-72B-Instruct"
-            client = InferenceClient(model=online_model, token=token)
-            
-            system_prompt = f"You are a Subagent with the role: {role}. Your job is to assist the main agent. Answer the user prompt directly."
-            full_prompt = f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n<|im_start|>user\n{task}\n<|im_end|>\n<|im_start|>assistant\n"
-            
-            response_text = ""
-            for token_chunk in client.text_generation(
-                full_prompt,
-                max_new_tokens=1024,
-                temperature=0.3,
-                stream=True
-            ):
-                response_text += token_chunk
+            # Look up if a custom model has been selected
+            try:
+                state_path = resolve_path("chat_sessions.json")
+                if os.path.exists(state_path):
+                    with open(state_path, "r") as f:
+                        session_data = json.load(f)
+                    # Use the last session's model if available
+                    if isinstance(session_data, list) and len(session_data) > 0:
+                        active_model_id = session_data[-1].get("model_id", active_model_id)
+            except:
+                pass
                 
-            if response_text.strip():
-                subagent_result["text"] = response_text
-                success = True
-                print(f"[Subagent] '{role}' successfully processed online via '{online_model}'.")
+            if is_cloud_model(active_model_id):
+                system_prompt = f"You are an expert AI Subagent role-playing as: {role}. Assist the main agent. Answer the user prompt directly."
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": task}
+                ]
+                
+                print(f"[Subagent] '{role}' running online via cloud model '{active_model_id}'...")
+                response_text = ""
+                for token_chunk in stream_cloud(active_model_id, messages, max_tokens=2048, temperature=0.2):
+                    if "[ERROR]" in token_chunk or "[GROQ" in token_chunk:
+                        raise ValueError(token_chunk)
+                    response_text += token_chunk
+                
+                if response_text.strip():
+                    subagent_result["text"] = response_text
+                    success = True
+                    print(f"[Subagent] '{role}' successfully processed online via '{active_model_id}'.")
         except Exception as api_err:
-            print(f"[Subagent] Online API failed for '{role}': {api_err}. Falling back to sequential local MLX engine...")
+            print(f"[Subagent] Cloud API execution failed for '{role}': {api_err}. Falling back to local MLX engine...")
 
-        # 2. Sequential local fallback using GPU lock
+        # 2. Local fallback using local MLX engine
         if not success:
             try:
                 from agent import run_agent_loop
