@@ -40,6 +40,11 @@ POPULAR_MODELS = [
     {"id": "openrouter/deepseek-r1", "name": "☁️ [OpenRouter] DeepSeek R1",        "description": "DeepSeek R1 reasoning model. Comparable to o1. Strong at math & code.", "size": "Cloud"},
     {"id": "openrouter/llama-3.1-405b","name": "☁️ [OpenRouter] Llama 3.1 405B",   "description": "Meta 405B via OpenRouter aggregated routing.", "size": "Cloud"},
     {"id": "openrouter/mistral-nemo","name": "☁️ [OpenRouter] Mistral Nemo — FREE", "description": "Free model on OpenRouter. Good general purpose model.", "size": "Cloud FREE"},
+    # ── ☁️ HUGGINGFACE INFERENCE API (FREE Serverless, huggingface.co) ───────
+    {"id": "hf/deepseek-r1",         "name": "🤗 [HF] DeepSeek R1 — FREE ⭐",     "description": "DeepSeek R1 reasoning model (comparable to o1) via HF serverless inference API.", "size": "Cloud"},
+    {"id": "hf/deepseek-v3",         "name": "🤗 [HF] DeepSeek V3 — FREE",        "description": "DeepSeek V3 671B base model for general chat and quick coding tasks.", "size": "Cloud"},
+    {"id": "hf/llama-3.3-70b",       "name": "🤗 [HF] Llama 3.3 70B — FREE",      "description": "Meta Llama 3.3 70B running on HF serverless hardware. Clean, high quality.", "size": "Cloud"},
+    {"id": "hf/qwen-72b",            "name": "🤗 [HF] Qwen 2.5 72B — FREE",       "description": "Alibaba Qwen 2.5 72B Instruct via HF serverless API. Strong coder.", "size": "Cloud"},
     # ── 💻 LOCAL MODELS (Apple Silicon MLX) ─────────────────────────────────
     {"id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",  "name": "💻 [Local] Qwen 2.5 Coder 7B ⭐",  "description": "Best local model for 16GB M4. Fast, precise tool use. Already downloaded.", "size": "4.5 GB"},
     {"id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","name": "💻 [Local] Qwen 2.5 Coder 1.5B",  "description": "100+ tokens/sec. Ultra-lightweight for quick tasks.", "size": "1.0 GB"},
