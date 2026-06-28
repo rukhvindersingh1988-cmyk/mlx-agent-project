@@ -65,11 +65,15 @@ CLOUD_MODEL_REGISTRY = {
     "openrouter/qwen-72b":            {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct",            "context": 32768},
     "openrouter/mistral-nemo":        {"provider": "openrouter", "model": "mistralai/mistral-nemo",                "context": 32768, "free": True},
     "openrouter/llama-3.2-3b-free":   {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free", "context": 8192,  "free": True},
-    # ── HuggingFace Inference API ────────────────────────────────────────────
+    # ── HuggingFace Inference API (read token = inference, write token = Hub) ─
+    # Models confirmed working 2026-06-29 via live probe:
+    "hf/llama-3.3-70b":        {"provider": "hf",         "model": "meta-llama/Llama-3.3-70B-Instruct",           "context": 32768},
+    "hf/qwen-72b":             {"provider": "hf",         "model": "Qwen/Qwen2.5-72B-Instruct",                   "context": 32768},
+    "hf/deepseek-r1":          {"provider": "hf",         "model": "deepseek-ai/DeepSeek-R1",                     "context": 65536},
+    "hf/deepseek-v3":          {"provider": "hf",         "model": "deepseek-ai/DeepSeek-V3-0324",               "context": 65536},
+    # Legacy / may need gated access:
     "hf/llama-3.1-405b":       {"provider": "hf",         "model": "meta-llama/Meta-Llama-3.1-405B-Instruct",     "context": 32768},
     "hf/mixtral-8x22b":        {"provider": "hf",         "model": "mistralai/Mixtral-8x22B-Instruct-v0.1",       "context": 65536},
-    "hf/qwen-72b":             {"provider": "hf",         "model": "Qwen/Qwen2.5-72B-Instruct",                   "context": 32768},
-    "hf/deepseek-coder-v2":    {"provider": "hf",         "model": "deepseek-ai/DeepSeek-Coder-V2-Instruct",      "context": 32768},
 }
 
 
@@ -105,6 +109,26 @@ def _get_key(secrets: Dict, *keys) -> Optional[str]:
         if secrets.get(key):
             return secrets[key]
     return None
+
+
+def get_hf_write_token() -> Optional[str]:
+    """Return the HuggingFace write token for Hub uploads (push_to_hub, save_pretrained, etc.)
+    Uses hf_write_token from secrets.json, with fallback to env HF_WRITE_TOKEN."""
+    # Check env var first
+    env_val = os.environ.get("HF_WRITE_TOKEN")
+    if env_val:
+        return env_val
+    secrets = get_secrets()
+    return _get_key(secrets, "hf_write_token", "hf_api_key_2")
+
+
+def get_hf_read_token() -> Optional[str]:
+    """Return the HuggingFace read token for inference (InferenceClient, model downloads)."""
+    env_val = os.environ.get("HF_READ_TOKEN") or os.environ.get("HF_API_KEY")
+    if env_val:
+        return env_val
+    secrets = get_secrets()
+    return _get_key(secrets, "hf_read_token", "hf_api_key", "hf_token")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,9 +291,11 @@ def stream_cloud(
         yield from _stream_openrouter(model_info, messages, max_tokens, temperature, api_key)
 
     elif provider == "hf":
-        api_key = _get_key(secrets, "hf_api_key", "hf_token", "huggingface_api_key")
+        # hf_read_token  → used for inference (chat_completion via InferenceClient)
+        # hf_write_token → used for Hub uploads (push_to_hub, save pretrained, etc.)
+        api_key = _get_key(secrets, "hf_read_token", "hf_api_key", "hf_token", "huggingface_api_key")
         if not api_key:
-            yield "[HF] No API key. Add hf_api_key to secrets.json. Free at huggingface.co/settings/tokens"
+            yield "[HF] No read token. Add hf_read_token to secrets.json. Free at huggingface.co/settings/tokens"
             return
         yield from _stream_hf(model_info, messages, max_tokens, temperature, api_key)
 
@@ -285,7 +311,7 @@ def get_available_cloud_models(check_keys: bool = True) -> List[Dict[str, Any]]:
         "cerebras":   _get_key(secrets, "cerebras_api_key"),
         "together":   _get_key(secrets, "together_api_key"),
         "openrouter": _get_key(secrets, "openrouter_api_key"),
-        "hf":         _get_key(secrets, "hf_api_key", "hf_token"),
+        "hf":         _get_key(secrets, "hf_read_token", "hf_api_key", "hf_token"),
     }
     return [
         {
