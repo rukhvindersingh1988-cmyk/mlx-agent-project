@@ -1,0 +1,5 @@
+Python list comprehensions are a concise way to create lists from existing lists or other iterables by applying a transformation or filter to each element.
+They consist of brackets containing an expression followed by a for clause, then zero or more for or if clauses.
+The result is a new list resulting from evaluating the expression in the context of the for and if clauses which can be used to perform complex data transformations in a readable and efficient manner.
+
+Summary saved to file.

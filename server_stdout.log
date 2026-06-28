@@ -1,1 +1,13 @@
 INFO:     127.0.0.1:51494 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51545 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51545 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51546 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51545 - "GET /static/logo_compressed.jpg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51546 - "GET /api/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51545 - "GET /api/gmail-config HTTP/1.1" 200 OK
+[WebSocket] Client connected.
+INFO:     127.0.0.1:51548 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51550 - "GET /api/project-overview?t=1782673477773 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51549 - "GET /api/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51546 - "GET /api/history?session_id=3a077918-6801-4154-9592-ebd25a59cef4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51551 - "GET /api/system-stats HTTP/1.1" 200 OK

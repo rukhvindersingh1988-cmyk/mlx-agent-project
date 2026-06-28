@@ -7,6 +7,10 @@
     {
       "from": "MainAgent",
       "message": "Review the sandboxing system in backend/tools.py. Do not install Homebrew or ripgrep. Simply list the directory contents using Python or find, and wait 30 seconds before checking your inbox for the auditor's findings."
+    },
+    {
+      "from": "MainAgent",
+      "message": "List 5 common Python security best practices and save to user_projects/security_audit_output.txt"
     }
   ],
   "MainAgent": [],
@@ -46,6 +50,10 @@
     {
       "from": "MainAgent",
       "message": "Write a CLI task manager to user_projects/task_manager.py with HIGH/MEDIUM/LOW priority filters, colorized output using ANSI codes, and JSON persistence to tasks.json."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a Python function that adds two numbers and save it to user_projects/code_architect_output.py"
     }
   ],
   "DataGenerator": [],
@@ -77,6 +85,10 @@
     {
       "from": "MainAgent",
       "message": "Dive into the files and provide recommendations for efficiency improvements to my code and workflow."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a 3-sentence summary of what Python list comprehensions are. Save output to user_projects/researcher_output.txt"
     }
   ],
   "Worker": [
@@ -153,6 +165,10 @@
     {
       "from": "MainAgent",
       "message": "Simulated validation task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write 3 simple pytest tests for a function called add(a, b) and save to user_projects/qa_tester_output.py"
     }
   ],
   "CodeArchitectSync": [
@@ -189,6 +205,24 @@
     {
       "from": "MainAgent",
       "message": "Write a clean CLI task manager to user_projects/task_manager.py with priority filters, colorized printing, and JSON persistence."
+    }
+  ],
+  "DataAnalyst": [
+    {
+      "from": "MainAgent",
+      "message": "Write a Python snippet that calculates mean, median and mode of a list and save to user_projects/data_analyst_output.py"
+    }
+  ],
+  "DevOps": [
+    {
+      "from": "MainAgent",
+      "message": "Write a basic Dockerfile for a Python FastAPI app and save to user_projects/devops_output.txt"
+    }
+  ],
+  "DocWriter": [
+    {
+      "from": "MainAgent",
+      "message": "Write a README.md for a Python CLI task manager and save to user_projects/docwriter_output.md"
     }
   ]
 }

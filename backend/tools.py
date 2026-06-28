@@ -691,14 +691,17 @@ def _subagent_thread_runner(role: str, task: str):
                     
                     response_text += chunk_text
                     
-                    # Parse tool call if present in accumulated text
-                    import importlib
+                     # Parse tool call if present in accumulated text
+                    import importlib, importlib.util as _ilu
                     try:
-                        import agent as _agent_module
-                        importlib.reload(_agent_module)
-                        extract_tool_call = _agent_module.extract_tool_call
-                    except ImportError:
-                        from agent import extract_tool_call
+                        # Load agent.py directly by file path to avoid relative import errors
+                        _backend_dir = os.path.dirname(os.path.abspath(__file__))
+                        _agent_spec = _ilu.spec_from_file_location("_agent_direct", os.path.join(_backend_dir, "agent.py"))
+                        _agent_mod = _ilu.module_from_spec(_agent_spec)
+                        _agent_spec.loader.exec_module(_agent_mod)
+                        extract_tool_call = _agent_mod.extract_tool_call
+                    except Exception:
+                        from backend.agent import extract_tool_call
                     tool_data = extract_tool_call(response_text)
                     if tool_data and "tool" in tool_data:
                         tname = tool_data["tool"]

@@ -1,0 +1,7 @@
+1. Validate and sanitize user input to prevent SQL injection and cross-site scripting (XSS) attacks.
+2. Use secure protocols for communication, such as HTTPS, to encrypt data in transit.
+3. Implement secure password storage using libraries like bcrypt or scrypt.
+4. Keep dependencies up-to-date to prevent exploitation of known vulnerabilities.
+5. Use a Web Application Firewall (WAF) to detect and prevent common web attacks.
+
+Security audit output verified.

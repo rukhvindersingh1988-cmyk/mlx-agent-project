@@ -1,0 +1,1 @@
+Mean: 3.625, Median: 4.0, Mode: [5]
