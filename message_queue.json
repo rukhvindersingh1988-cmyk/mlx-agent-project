@@ -38,6 +38,10 @@
     {
       "from": "MainAgent",
       "message": "Write a clean CLI task manager to user_projects/task_manager.py with priority filters, colorized printing, and JSON persistence."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a clean CLI task manager to user_projects/task_manager.py with priority filters (HIGH/MEDIUM/LOW), colorized terminal printing, and JSON persistence."
     }
   ],
   "DataGenerator": [],

@@ -699,16 +699,10 @@ def _subagent_thread_runner(role: str, task: str):
                         targs = tool_data.get("args", {})
                         print(f"[Subagent Tool] '{role}' requested tool '{tname}' with args {targs}")
                         
-                        # Translate subagent write_file calls to correct local write_file parameter keys
-                        if tname == "write_file":
-                            targs = {
-                                "relative_path": targs.get("path", ""),
-                                "content": targs.get("content", "")
-                            }
-                        elif tname == "run_command":
-                            targs = {
-                                "command": targs.get("command", "")
-                            }
+                        # Args are already normalised by extract_tool_call (positionally mapped to TOOLS_MANIFEST param names)
+                        # write_file => relative_path, content
+                        # run_command => command
+                        # No extra translation needed — execute_tool handles them directly
                             
                         # Execute the tool
                         try:
