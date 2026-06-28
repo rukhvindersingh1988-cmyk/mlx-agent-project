@@ -690,9 +690,9 @@ def _subagent_thread_runner(role: str, task: str):
                     
                     response_text += chunk_text
                     
-                    # Parse tool call if present in chunk
+                    # Parse tool call if present in accumulated text
                     from agent import extract_tool_call
-                    tool_data = extract_tool_call(chunk_text)
+                    tool_data = extract_tool_call(response_text)
                     if tool_data and "tool" in tool_data:
                         tname = tool_data["tool"]
                         targs = tool_data.get("args", {})
