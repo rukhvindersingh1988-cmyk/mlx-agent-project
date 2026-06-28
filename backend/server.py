@@ -19,27 +19,47 @@ from .agent import run_agent_loop, AGENT_STATE
 
 # Popular models to recommend
 POPULAR_MODELS = [
+    # Cloud Models via Groq (Free API key at console.groq.com)
     {
-        "id": "mlx-community/gemma-2-9b-it-4bit",
-        "name": "Gemma 2 9B (4-bit)",
-        "description": "Google's 9B model. Extremely powerful logic and orchestration. Perfect for a 16GB Mac.",
-        "size": "approx 6.0 GB"
+        "id": "groq/llama-3.1-405b",
+        "name": "☁️ Llama 3.1 405B (Groq Cloud — FREE)",
+        "description": "Meta's most powerful open model — 405B parameters. Best for complex analysis and deep reasoning. Add groq_api_key to secrets.json. Get free key at console.groq.com/keys",
+        "size": "☁️ Cloud — No download needed"
+    },
+    {
+        "id": "groq/llama-3.3-70b",
+        "name": "☁️ Llama 3.3 70B (Groq Cloud — FREE)",
+        "description": "Best balance of speed and intelligence. 300+ tokens/sec via Groq. Excellent for complex tasks. Free tier available.",
+        "size": "☁️ Cloud — No download needed"
+    },
+    {
+        "id": "groq/gemma2-9b",
+        "name": "☁️ Gemma 2 9B (Groq Cloud — FREE)",
+        "description": "Google's Gemma 2 9B on Groq hardware — fast, smart, great for coding via the cloud.",
+        "size": "☁️ Cloud — No download needed"
+    },
+    # Local Models (MLX — Apple Silicon)
+    {
+        "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        "name": "💻 Qwen 2.5 Coder 7B (Local — Best for 16GB)",
+        "description": "Best local model for your M4 Mac. Fast, precise tool use, great for coding. Already downloaded.",
+        "size": "approx 4.5 GB"
     },
     {
         "id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
-        "name": "Qwen 2.5 Coder 1.5B (4-bit)",
-        "description": "Ultra-lightweight, extremely fast coding model. Runs at 100+ tokens/second. Great for quick tasks.",
+        "name": "💻 Qwen 2.5 Coder 1.5B (Local — Ultra Fast)",
+        "description": "Ultra-lightweight, 100+ tokens/second. Great for quick tasks.",
         "size": "approx 1.0 GB"
     },
     {
         "id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
-        "name": "Llama 3.1 8B (4-bit)",
+        "name": "💻 Llama 3.1 8B (Local)",
         "description": "Excellent general purpose reasoning model by Meta, optimized for Apple Silicon.",
         "size": "approx 4.8 GB"
     },
     {
         "id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
-        "name": "Llama 3.2 3B (4-bit)",
+        "name": "💻 Llama 3.2 3B (Local)",
         "description": "Fast and lightweight reasoning model, perfect for general chat.",
         "size": "approx 2.0 GB"
     }

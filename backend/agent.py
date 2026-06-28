@@ -14,9 +14,11 @@ from typing import Dict, List, Any, Callable, Awaitable, Optional
 try:
     from mlx_runner import runner, list_downloaded_models
     from tools import execute_tool, TOOLS_MANIFEST, get_workspace
+    from groq_runner import is_groq_model, stream_groq
 except ImportError:
     from .mlx_runner import runner, list_downloaded_models
     from .tools import execute_tool, TOOLS_MANIFEST, get_workspace
+    from .groq_runner import is_groq_model, stream_groq
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -924,17 +926,26 @@ async def run_agent_loop(
 
         def generator_worker():
             try:
-                for token in runner.generate_stream(
-                    model_id, 
-                    messages,
-                    temp=temp, max_tokens=4096,
-                    stop_sequences=STOP_SEQUENCES,
-                    image_path=image_path if has_image else None,
-                    cancel_event=cancel_event
-                ):
-                    token_queue.put(token)
-                    if AGENT_STATE["stop_requested"] or cancel_event.is_set():
-                        break
+                if is_groq_model(model_id):
+                    # ── Cloud path: stream from Groq API ──────────────────
+                    print(f"[Groq] Routing to cloud model: {model_id}")
+                    for token in stream_groq(model_id, messages, max_tokens=4096, temperature=temp):
+                        token_queue.put(token)
+                        if AGENT_STATE["stop_requested"] or cancel_event.is_set():
+                            break
+                else:
+                    # ── Local path: stream from MLX runner ────────────────
+                    for token in runner.generate_stream(
+                        model_id,
+                        messages,
+                        temp=temp, max_tokens=4096,
+                        stop_sequences=STOP_SEQUENCES,
+                        image_path=image_path if has_image else None,
+                        cancel_event=cancel_event
+                    ):
+                        token_queue.put(token)
+                        if AGENT_STATE["stop_requested"] or cancel_event.is_set():
+                            break
             except Exception as e:
                 token_queue.put(e)
             finally:
