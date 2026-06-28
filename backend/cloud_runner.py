@@ -42,12 +42,13 @@ from typing import Dict, List, Generator, Optional, Any
 
 CLOUD_MODEL_REGISTRY = {
     # ── Groq (fastest inference, free tier) ─────────────────────────────────
-    "groq/llama-3.1-405b":     {"provider": "groq",       "model": "llama-3.1-405b-reasoning",    "context": 32768},
     "groq/llama-3.3-70b":      {"provider": "groq",       "model": "llama-3.3-70b-versatile",     "context": 32768},
-    "groq/llama-3.1-70b":      {"provider": "groq",       "model": "llama-3.1-70b-versatile",     "context": 32768},
     "groq/llama-3.1-8b":       {"provider": "groq",       "model": "llama-3.1-8b-instant",        "context": 8192},
-    "groq/mixtral-8x7b":       {"provider": "groq",       "model": "mixtral-8x7b-32768",          "context": 32768},
-    "groq/gemma2-9b":          {"provider": "groq",       "model": "gemma2-9b-it",               "context": 8192},
+    "groq/llama-4-scout":      {"provider": "groq",       "model": "meta-llama/llama-4-scout-17b-16e-instruct", "context": 131072},
+    "groq/qwen3-32b":          {"provider": "groq",       "model": "qwen/qwen3-32b",              "context": 32768},
+    "groq/qwen3.6-27b":        {"provider": "groq",       "model": "qwen/qwen3.6-27b",            "context": 32768},
+    "groq/compound":           {"provider": "groq",       "model": "groq/compound",               "context": 32768},
+    "groq/compound-mini":      {"provider": "groq",       "model": "groq/compound-mini",          "context": 32768},
     # ── Cerebras (very fast, free tier) ─────────────────────────────────────
     "cerebras/llama-3.1-70b":  {"provider": "cerebras",   "model": "llama3.1-70b",               "context": 8192},
     "cerebras/llama-3.1-8b":   {"provider": "cerebras",   "model": "llama3.1-8b",                "context": 8192},

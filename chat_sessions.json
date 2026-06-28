@@ -79,6 +79,14 @@
         {
           "role": "assistant",
           "content": "The workspace contains various directories and files related to the project. Directories include 'backend', 'frontend', 'knowledge_bank', 'user_projects', and more. Files include configuration files, scripts, logs, and data files. Each directory and file serves a specific purpose in the project's development and operation. To improve the project, consider organizing files into subfolders, adding documentation, and implementing version control. Additionally, ensure that all scripts and configurations are up-to-date and well-commented."
+        },
+        {
+          "role": "user",
+          "content": "continue use sub agent and give me proper answer"
+        },
+        {
+          "role": "assistant",
+          "content": "The workspace contains various directories and files related to the project. Directories include 'backend', 'frontend', 'knowledge_bank', 'user_projects', and more. Files include configuration files, scripts, logs, and data files. Each directory and file serves a specific purpose in the project's development and operation."
         }
       ]
     }

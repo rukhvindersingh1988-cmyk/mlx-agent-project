@@ -116,6 +116,10 @@
     {
       "from": "MainAgent",
       "message": "Analyze the code for performance bottlenecks and accuracy issues. Provide suggestions for improvements."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Review the project's codebase and suggest improvements."
     }
   ],
   "QATester": [

@@ -20,11 +20,13 @@ from .agent import run_agent_loop, AGENT_STATE
 # Popular models to recommend — Cloud + Local
 POPULAR_MODELS = [
     # ── ☁️ GROQ (Fastest free inference, console.groq.com/keys) ─────────────
-    {"id": "groq/llama-3.1-405b",    "name": "☁️ [Groq] Llama 3.1 405B — FREE",    "description": "Meta 405B. Best for deep analysis, architecture, complex reasoning. Free Groq key needed.", "size": "Cloud"},
-    {"id": "groq/llama-3.3-70b",     "name": "☁️ [Groq] Llama 3.3 70B — FREE",     "description": "300+ tokens/sec. Best speed/quality balance. Great for most complex tasks.", "size": "Cloud"},
-    {"id": "groq/llama-3.1-8b",      "name": "☁️ [Groq] Llama 3.1 8B — FREE",      "description": "Ultra fast for simple tasks. Groq hardware.", "size": "Cloud"},
-    {"id": "groq/mixtral-8x7b",      "name": "☁️ [Groq] Mixtral 8x7B — FREE",      "description": "Mixture of experts model, excellent for diverse tasks.", "size": "Cloud"},
-    {"id": "groq/gemma2-9b",         "name": "☁️ [Groq] Gemma 2 9B — FREE",        "description": "Google Gemma 2 9B via Groq. Fast and smart.", "size": "Cloud"},
+    {"id": "groq/llama-3.3-70b",     "name": "☁️ [Groq] Llama 3.3 70B — FREE ⭐",  "description": "Meta Llama 3.3 70B. Best Groq model. 300+ tokens/sec. Great for complex tasks.", "size": "Cloud"},
+    {"id": "groq/llama-4-scout",     "name": "☁️ [Groq] Llama 4 Scout 17B — FREE", "description": "Meta Llama 4 Scout. 131K context window. Multi-modal capable.", "size": "Cloud"},
+    {"id": "groq/llama-3.1-8b",      "name": "☁️ [Groq] Llama 3.1 8B — FREE",      "description": "Ultra fast for simple tasks on Groq hardware.", "size": "Cloud"},
+    {"id": "groq/qwen3-32b",         "name": "☁️ [Groq] Qwen3 32B — FREE",         "description": "Alibaba Qwen3 32B. Excellent reasoning, coding, and math.", "size": "Cloud"},
+    {"id": "groq/qwen3.6-27b",       "name": "☁️ [Groq] Qwen3.6 27B — FREE",       "description": "Alibaba Qwen3.6 27B. Strong multilingual and coding model.", "size": "Cloud"},
+    {"id": "groq/compound",          "name": "☁️ [Groq] Compound — FREE",           "description": "Groq's own compound model. Optimized for agentic tasks.", "size": "Cloud"},
+    {"id": "groq/compound-mini",     "name": "☁️ [Groq] Compound Mini — FREE",      "description": "Groq's fast lightweight compound model.", "size": "Cloud"},
     # ── ☁️ CEREBRAS (Ultra-fast inference, cloud.cerebras.ai) ────────────────
     {"id": "cerebras/llama-3.3-70b", "name": "⚡ [Cerebras] Llama 3.3 70B — FREE", "description": "Cerebras wafer-scale chip. Extremely fast 70B inference. Free tier available.", "size": "Cloud"},
     {"id": "cerebras/llama-3.1-8b",  "name": "⚡ [Cerebras] Llama 3.1 8B — FREE",  "description": "Blazing fast 8B on Cerebras hardware. Sub-second latency.", "size": "Cloud"},
