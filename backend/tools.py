@@ -648,24 +648,25 @@ def _subagent_thread_runner(role: str, task: str):
                 pass
                 
             if is_cloud_model(active_model_id):
-                # Teach the subagent how to use tools to modify files in the user's workspace
+                # System prompt teaching subagent tool call format
                 system_prompt = (
-                    f"You are an expert AI Subagent role-playing as: {role}. Assist the main agent.\n"
-                    "You have direct access to the user's local filesystem and terminal via tools.\n"
-                    "To use a tool, you MUST output a standard JSON block wrapped in a markdown ```json code block. After outputting the tool call, STOP generating immediately.\n\n"
-                    "Available tools:\n"
-                    "- write_file(path, content): Create a new file with the specified content.\n"
-                    "- run_command(command): Run a shell command in the workspace directory.\n\n"
-                    "Example tool call format:\n"
+                    f"You are an expert AI Subagent with the role: {role}. You assist the main agent by performing real tasks.\n\n"
+                    "You have direct access to the user's local filesystem and terminal.\n"
+                    "To create or write a file, output ONLY this JSON block and nothing else:\n\n"
                     "```json\n"
                     "{\n"
-                    "  \"tool\": \"write_file\",\n"
-                    "  \"args\": {\n"
-                    "    \"path\": \"user_projects/hello.py\",\n"
-                    "    \"content\": \"print('hello')\"\n"
-                    "  }\n"
+                    "  \"function\": \"write_file\",\n"
+                    "  \"args\": [\"relative/path/to/file.py\", \"file content here\"]\n"
                     "}\n"
-                    "```\n"
+                    "```\n\n"
+                    "To run a shell command, output:\n\n"
+                    "```json\n"
+                    "{\n"
+                    "  \"function\": \"run_command\",\n"
+                    "  \"args\": [\"your shell command here\"]\n"
+                    "}\n"
+                    "```\n\n"
+                    "IMPORTANT: Output ONLY the JSON block. No explanations before or after. Execute the task immediately."
                 )
                 
                 messages = [

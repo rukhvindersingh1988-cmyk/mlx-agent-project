@@ -490,7 +490,7 @@ def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
     # Remove thought stripping to prevent deleting valid JSON when model forgets </thought>
     text_without_thoughts = text
 
-    # Strategy 3: Infinite-depth bracket matching for any JSON with "tool" key
+    # Strategy 3: Infinite-depth bracket matching for any JSON with "tool" OR "function" key
     start_idx = 0
     while True:
         try:
@@ -506,8 +506,31 @@ def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
                 depth -= 1
                 if depth == 0:
                     parsed = try_parse_json(text_without_thoughts[start:i+1])
-                    if parsed and "tool" in parsed:
-                        return parsed
+                    if parsed:
+                        # Normalize: some models use "function" instead of "tool"
+                        if "function" in parsed and "tool" not in parsed:
+                            parsed["tool"] = parsed.pop("function")
+                        # Normalize: some models use list-based args instead of dict
+                        if "tool" in parsed:
+                            raw_args = parsed.get("args", parsed.get("arguments", {}))
+                            if isinstance(raw_args, list):
+                                # Map list args positionally to known tool params
+                                try:
+                                    from tools import TOOLS_MANIFEST
+                                except ImportError:
+                                    from .tools import TOOLS_MANIFEST
+                                tool_name = parsed["tool"]
+                                tool_meta = next((t for t in TOOLS_MANIFEST if t["name"] == tool_name), None)
+                                if tool_meta:
+                                    param_names = list(tool_meta["parameters"].keys())
+                                    parsed["args"] = {param_names[i]: raw_args[i] for i in range(min(len(param_names), len(raw_args)))}
+                                else:
+                                    parsed["args"] = {}
+                            elif not isinstance(raw_args, dict):
+                                parsed["args"] = {}
+                            else:
+                                parsed["args"] = raw_args
+                            return parsed
                     break
         
         # If brackets never closed, it might be truncated. Pass to auto-repair.
