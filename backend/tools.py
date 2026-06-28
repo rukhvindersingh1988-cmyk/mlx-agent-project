@@ -195,6 +195,114 @@ def search_knowledge_bank(query: str) -> str:
     except Exception as e:
         return f"Error searching knowledge bank: {e}"
 
+def ingest_github_repo(repo_url: str) -> str:
+    """Download and analyze a GitHub repository, generating a structured knowledge guide inside knowledge_bank/."""
+    try:
+        repo_url = repo_url.strip()
+        if not repo_url.startswith("http"):
+            return "Error: Invalid repository URL. Must be a valid HTTP/HTTPS git URL."
+        
+        # Determine repo name and temp directory
+        repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+        import tempfile
+        import shutil
+        
+        temp_dir = tempfile.mkdtemp(prefix="git_ingest_")
+        print(f"[Tool: ingest_github_repo] Cloning {repo_url} into {temp_dir}...")
+        
+        # Clone repo
+        clone_res = run_subprocess_managed(f"git clone --depth 1 {repo_url} {temp_dir}")
+        if clone_res.returncode != 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return f"Error cloning repository: {clone_res.stderr}"
+            
+        # Traverse and gather architectural details
+        file_tree = []
+        source_code_files = []
+        extensions_to_parse = [".py", ".js", ".ts", ".go", ".rs", ".cpp", ".h", ".java", ".md", ".sh", ".yaml", ".json"]
+        ignore_dirs = {"venv", ".venv", "node_modules", ".git", ".github", "__pycache__", "build", "dist", "target", "adapters", "models"}
+        
+        for root, dirs, files in os.walk(temp_dir):
+            # Prune directory list in-place
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            
+            for file in files:
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, temp_dir)
+                file_tree.append(rel_path)
+                
+                # Check extension and collect sample contents
+                _, ext = os.path.splitext(file)
+                if ext in extensions_to_parse:
+                    # Check size (ignore very large assets)
+                    if os.path.exists(full_path) and os.path.getsize(full_path) < 150000:
+                        source_code_files.append((rel_path, full_path))
+                        
+        # Construct Guide
+        guide_content = f"# 🧠 Codebase Guide: {repo_name}\n"
+        guide_content += f"**Source Repository:** {repo_url}\n"
+        guide_content += f"**Ingested At:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        guide_content += "## 📁 Project Structure\n```text\n"
+        # Take first 100 paths to prevent guides from growing overly massive
+        for path in file_tree[:100]:
+            guide_content += f"- {path}\n"
+        if len(file_tree) > 100:
+            guide_content += f"- ... ({len(file_tree) - 100} more files)\n"
+        guide_content += "```\n\n"
+        
+        # Gather overview of key files
+        guide_content += "## 📄 Core Code & APIs\n\n"
+        
+        # Pick top 15 most important files (focus on entrypoints, configs, readme)
+        important_keywords = ["readme", "main", "app", "server", "index", "tools", "agent", "route", "config", "setup"]
+        
+        def importance_sort(item):
+            rel_p = item[0].lower()
+            score = 0
+            if any(kw in rel_p for kw in important_keywords):
+                score += 10
+            if rel_p.count("/") == 0:  # Root level scripts first
+                score += 5
+            return score
+            
+        source_code_files.sort(key=importance_sort, reverse=True)
+        
+        for rel_p, full_p in source_code_files[:15]:
+            try:
+                with open(full_p, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                # Clean block content
+                guide_content += f"### File: `{rel_p}`\n\n"
+                guide_content += "```"
+                if rel_p.endswith(".py"): guide_content += "python"
+                elif rel_p.endswith((".js", ".ts")): guide_content += "javascript"
+                elif rel_p.endswith(".rs"): guide_content += "rust"
+                elif rel_p.endswith(".go"): guide_content += "go"
+                guide_content += "\n"
+                # Limit snippet to first 120 lines to keep knowledge bank chunks efficient
+                lines = content.splitlines()[:120]
+                guide_content += "\n".join(lines)
+                if len(content.splitlines()) > 120:
+                    guide_content += "\n... (truncated)"
+                guide_content += "\n```\n\n"
+            except Exception as read_err:
+                print(f"[Tool: ingest_github_repo] Failed to read {rel_p}: {read_err}")
+                
+        # Write to Knowledge Bank
+        kb_path = resolve_path(os.path.join("knowledge_bank", f"{repo_name.lower()}_guide.md"))
+        os.makedirs(os.path.dirname(kb_path), exist_ok=True)
+        with open(kb_path, "w", encoding="utf-8") as f:
+            f.write(guide_content)
+            
+        # Cleanup
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return f"Success: Ingested repository '{repo_name}'. Knowledge base guide created at 'knowledge_bank/{repo_name.lower()}_guide.md' ({len(guide_content)} characters)."
+    except Exception as e:
+        return f"Error ingesting repository: {str(e)}"
+
+
 def write_file(relative_path: str, content: str) -> str:
     try:
         # Self-preservation firewall
@@ -1147,6 +1255,11 @@ TOOLS_MANIFEST = [
         "name": "run_sandboxed",
         "description": "Run an untrusted command in a restricted sandbox with no network access and a 30-second timeout. Use this for running user-generated or AI-generated code that has not been reviewed.",
         "parameters": {"command": "The shell command string to execute in the sandbox."}
+    },
+    {
+        "name": "ingest_github_repo",
+        "description": "Download, clone, and analyze any public GitHub repository, generating a structured, searchable guide inside the knowledge bank for future context search.",
+        "parameters": {"repo_url": "The HTTPS clone URL of the public GitHub repository (e.g. 'https://github.com/org/repo')."}
     }
 ]
 
@@ -1188,6 +1301,7 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
         elif name == "check_inbox": return check_inbox(args["my_role"])
         elif name == "wait": return wait(args["seconds"])
         elif name == "run_sandboxed": return run_sandboxed(args["command"])
+        elif name == "ingest_github_repo": return ingest_github_repo(args["repo_url"])
         else: return f"Error: Tool '{name}' is not recognized."
     except KeyError as e:
         return f"Error: Missing required argument '{e.args[0]}' for tool '{name}'."

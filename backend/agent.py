@@ -1128,7 +1128,7 @@ async def run_agent_loop(
                 "web_search", "web_fetch", "read_file_chunk", "list_knowledge_bank",
                 "grep_search", "invoke_subagent", "send_message", "check_inbox",
                 "final_answer", "wait", "run_sandboxed", "get_secret", "set_secret",
-                "gmail_list_emails", "gmail_read_email", "gmail_delete_email"
+                "gmail_list_emails", "gmail_read_email", "gmail_delete_email", "ingest_github_repo"
             ]
             if not tool_name or not isinstance(tool_name, str) or tool_name not in VALID_TOOLS:
                 print(f"[Agent] Invalid/hallucinated tool name '{str(tool_name)[:80]}'. Treating as failure.")
