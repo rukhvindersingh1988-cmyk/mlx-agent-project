@@ -719,8 +719,11 @@ def _subagent_thread_runner(role: str, task: str):
                             
                         messages.append({"role": "assistant", "content": chunk_text})
                         messages.append({"role": "user", "content": f"TOOL RESULT ({tname}):\n{result_out}"})
+                        # Reset response text so we accumulate the next agent turn cleanly
+                        response_text = ""
                     else:
-                        break # Normal text response, no tool calls
+                        # If no tool was called, this is the final conversational answer
+                        break
                 
                 if response_text.strip():
                     subagent_result["text"] = response_text
