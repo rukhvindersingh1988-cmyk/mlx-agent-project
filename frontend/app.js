@@ -358,8 +358,11 @@ async function loadModels() {
         }
         
         models.forEach(model => {
-            // Populate selector if downloaded
-            if (model.downloaded) {
+            const isCloud = /^(groq|cerebras|together|openrouter|hf)\//.test(model.id);
+            const isReady = model.downloaded || isCloud;
+
+            // Populate selector if ready (downloaded or cloud)
+            if (isReady) {
                 const opt = document.createElement("option");
                 opt.value = model.id;
                 opt.textContent = model.name;
@@ -375,7 +378,10 @@ async function loadModels() {
             let actionBtnHTML = "";
             let statusLabelHTML = "";
             
-            if (model.downloaded) {
+            if (isCloud) {
+                statusLabelHTML = '<span class="download-status-label downloaded">☁️ Cloud Ready</span>';
+                actionBtnHTML = `<button class="btn-small select-model-btn" onclick="selectModel('${model.id}')">Select</button>`;
+            } else if (model.downloaded) {
                 statusLabelHTML = '<span class="download-status-label downloaded">Downloaded ✓</span>';
                 actionBtnHTML = `<button class="btn-small select-model-btn" onclick="selectModel('${model.id}')">Select</button>`;
             } else {

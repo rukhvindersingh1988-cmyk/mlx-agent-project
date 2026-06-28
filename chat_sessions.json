@@ -87,6 +87,14 @@
         {
           "role": "assistant",
           "content": "The workspace contains various directories and files related to the project. Directories include 'backend', 'frontend', 'knowledge_bank', 'user_projects', and more. Files include configuration files, scripts, logs, and data files. Each directory and file serves a specific purpose in the project's development and operation."
+        },
+        {
+          "role": "user",
+          "content": "divide the task to mutiple sub agents and give me appropiate answer"
+        },
+        {
+          "role": "assistant",
+          "content": "The Code Reviewer subagent has completed its task. Please check the inbox using the `check_inbox` tool when you're ready."
         }
       ]
     }
