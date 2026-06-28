@@ -698,20 +698,15 @@ def _subagent_thread_runner(role: str, task: str):
                         targs = tool_data.get("args", {})
                         print(f"[Subagent Tool] '{role}' requested tool '{tname}' with args {targs}")
                         
-                        # Translate write_file to write_to_file or correct format
+                        # Translate subagent write_file calls to correct local write_file parameter keys
                         if tname == "write_file":
-                            tname = "write_to_file"
                             targs = {
-                                "TargetFile": os.path.abspath(os.path.join(resolve_path("."), targs.get("path", ""))),
-                                "CodeContent": targs.get("content", ""),
-                                "Overwrite": True,
-                                "Description": "Created by subagent"
+                                "relative_path": targs.get("path", ""),
+                                "content": targs.get("content", "")
                             }
                         elif tname == "run_command":
                             targs = {
-                                "CommandLine": targs.get("command", ""),
-                                "Cwd": resolve_path("."),
-                                "WaitMsBeforeAsync": 5000
+                                "command": targs.get("command", "")
                             }
                             
                         # Execute the tool
