@@ -675,7 +675,7 @@ def _subagent_thread_runner(role: str, task: str):
                 print(f"[Subagent] '{role}' acquired GPU lock. Running local inference...")
                 asyncio.run(run_agent_loop(
                     user_prompt=task,
-                    model_id="mlx-community/gemma-2-9b-it-4bit",  # Default model for subagents
+                    model_id="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",  # Default local model for subagents
                     ws_send_callback=subagent_callback,
                     role=role
                 ))

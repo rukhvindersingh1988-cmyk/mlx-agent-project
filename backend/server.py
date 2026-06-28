@@ -17,52 +17,32 @@ from .mlx_runner import (
 )
 from .agent import run_agent_loop, AGENT_STATE
 
-# Popular models to recommend
+# Popular models to recommend — Cloud + Local
 POPULAR_MODELS = [
-    # Cloud Models via Groq (Free API key at console.groq.com)
-    {
-        "id": "groq/llama-3.1-405b",
-        "name": "☁️ Llama 3.1 405B (Groq Cloud — FREE)",
-        "description": "Meta's most powerful open model — 405B parameters. Best for complex analysis and deep reasoning. Add groq_api_key to secrets.json. Get free key at console.groq.com/keys",
-        "size": "☁️ Cloud — No download needed"
-    },
-    {
-        "id": "groq/llama-3.3-70b",
-        "name": "☁️ Llama 3.3 70B (Groq Cloud — FREE)",
-        "description": "Best balance of speed and intelligence. 300+ tokens/sec via Groq. Excellent for complex tasks. Free tier available.",
-        "size": "☁️ Cloud — No download needed"
-    },
-    {
-        "id": "groq/gemma2-9b",
-        "name": "☁️ Gemma 2 9B (Groq Cloud — FREE)",
-        "description": "Google's Gemma 2 9B on Groq hardware — fast, smart, great for coding via the cloud.",
-        "size": "☁️ Cloud — No download needed"
-    },
-    # Local Models (MLX — Apple Silicon)
-    {
-        "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-        "name": "💻 Qwen 2.5 Coder 7B (Local — Best for 16GB)",
-        "description": "Best local model for your M4 Mac. Fast, precise tool use, great for coding. Already downloaded.",
-        "size": "approx 4.5 GB"
-    },
-    {
-        "id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
-        "name": "💻 Qwen 2.5 Coder 1.5B (Local — Ultra Fast)",
-        "description": "Ultra-lightweight, 100+ tokens/second. Great for quick tasks.",
-        "size": "approx 1.0 GB"
-    },
-    {
-        "id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
-        "name": "💻 Llama 3.1 8B (Local)",
-        "description": "Excellent general purpose reasoning model by Meta, optimized for Apple Silicon.",
-        "size": "approx 4.8 GB"
-    },
-    {
-        "id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
-        "name": "💻 Llama 3.2 3B (Local)",
-        "description": "Fast and lightweight reasoning model, perfect for general chat.",
-        "size": "approx 2.0 GB"
-    }
+    # ── ☁️ GROQ (Fastest free inference, console.groq.com/keys) ─────────────
+    {"id": "groq/llama-3.1-405b",    "name": "☁️ [Groq] Llama 3.1 405B — FREE",    "description": "Meta 405B. Best for deep analysis, architecture, complex reasoning. Free Groq key needed.", "size": "Cloud"},
+    {"id": "groq/llama-3.3-70b",     "name": "☁️ [Groq] Llama 3.3 70B — FREE",     "description": "300+ tokens/sec. Best speed/quality balance. Great for most complex tasks.", "size": "Cloud"},
+    {"id": "groq/llama-3.1-8b",      "name": "☁️ [Groq] Llama 3.1 8B — FREE",      "description": "Ultra fast for simple tasks. Groq hardware.", "size": "Cloud"},
+    {"id": "groq/mixtral-8x7b",      "name": "☁️ [Groq] Mixtral 8x7B — FREE",      "description": "Mixture of experts model, excellent for diverse tasks.", "size": "Cloud"},
+    {"id": "groq/gemma2-9b",         "name": "☁️ [Groq] Gemma 2 9B — FREE",        "description": "Google Gemma 2 9B via Groq. Fast and smart.", "size": "Cloud"},
+    # ── ☁️ CEREBRAS (Ultra-fast inference, cloud.cerebras.ai) ────────────────
+    {"id": "cerebras/llama-3.3-70b", "name": "⚡ [Cerebras] Llama 3.3 70B — FREE", "description": "Cerebras wafer-scale chip. Extremely fast 70B inference. Free tier available.", "size": "Cloud"},
+    {"id": "cerebras/llama-3.1-8b",  "name": "⚡ [Cerebras] Llama 3.1 8B — FREE",  "description": "Blazing fast 8B on Cerebras hardware. Sub-second latency.", "size": "Cloud"},
+    # ── ☁️ TOGETHER.AI (50+ models, api.together.xyz) ─────────────────────────
+    {"id": "together/llama-3.1-405b","name": "☁️ [Together] Llama 3.1 405B",       "description": "Meta 405B Turbo via Together.ai. $1 free credit on signup.", "size": "Cloud"},
+    {"id": "together/llama-3.1-70b", "name": "☁️ [Together] Llama 3.1 70B",        "description": "Meta 70B Turbo via Together.ai. Great for complex tasks.", "size": "Cloud"},
+    {"id": "together/mixtral-8x22b", "name": "☁️ [Together] Mixtral 8x22B",        "description": "Mistral MoE 141B effective params. Strong reasoning.", "size": "Cloud"},
+    {"id": "together/deepseek-coder", "name": "☁️ [Together] DeepSeek Coder V2",   "description": "Best open-source coding model. DeepSeek Coder V2 via Together.", "size": "Cloud"},
+    {"id": "together/qwen-72b",      "name": "☁️ [Together] Qwen 2.5 72B",         "description": "Alibaba Qwen 72B. Excellent multilingual and coding capabilities.", "size": "Cloud"},
+    # ── ☁️ OPENROUTER (100+ models, openrouter.ai) ────────────────────────────
+    {"id": "openrouter/deepseek-r1", "name": "☁️ [OpenRouter] DeepSeek R1",        "description": "DeepSeek R1 reasoning model. Comparable to o1. Strong at math & code.", "size": "Cloud"},
+    {"id": "openrouter/llama-3.1-405b","name": "☁️ [OpenRouter] Llama 3.1 405B",   "description": "Meta 405B via OpenRouter aggregated routing.", "size": "Cloud"},
+    {"id": "openrouter/mistral-nemo","name": "☁️ [OpenRouter] Mistral Nemo — FREE", "description": "Free model on OpenRouter. Good general purpose model.", "size": "Cloud FREE"},
+    # ── 💻 LOCAL MODELS (Apple Silicon MLX) ─────────────────────────────────
+    {"id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",  "name": "💻 [Local] Qwen 2.5 Coder 7B ⭐",  "description": "Best local model for 16GB M4. Fast, precise tool use. Already downloaded.", "size": "4.5 GB"},
+    {"id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","name": "💻 [Local] Qwen 2.5 Coder 1.5B",  "description": "100+ tokens/sec. Ultra-lightweight for quick tasks.", "size": "1.0 GB"},
+    {"id": "mlx-community/Llama-3.1-8B-Instruct-4bit",      "name": "💻 [Local] Llama 3.1 8B",         "description": "General purpose reasoning by Meta for Apple Silicon.", "size": "4.8 GB"},
+    {"id": "mlx-community/Llama-3.2-3B-Instruct-4bit",      "name": "💻 [Local] Llama 3.2 3B",         "description": "Lightweight reasoning model, fast general chat.", "size": "2.0 GB"},
 ]
 
 app = FastAPI(title="Antigravity MLX Local Agent")

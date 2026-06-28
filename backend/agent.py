@@ -14,11 +14,11 @@ from typing import Dict, List, Any, Callable, Awaitable, Optional
 try:
     from mlx_runner import runner, list_downloaded_models
     from tools import execute_tool, TOOLS_MANIFEST, get_workspace
-    from groq_runner import is_groq_model, stream_groq
+    from cloud_runner import is_cloud_model, stream_cloud
 except ImportError:
     from .mlx_runner import runner, list_downloaded_models
     from .tools import execute_tool, TOOLS_MANIFEST, get_workspace
-    from .groq_runner import is_groq_model, stream_groq
+    from .cloud_runner import is_cloud_model, stream_cloud
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -926,10 +926,10 @@ async def run_agent_loop(
 
         def generator_worker():
             try:
-                if is_groq_model(model_id):
-                    # ── Cloud path: stream from Groq API ──────────────────
-                    print(f"[Groq] Routing to cloud model: {model_id}")
-                    for token in stream_groq(model_id, messages, max_tokens=4096, temperature=temp):
+                if is_cloud_model(model_id):
+                    # ── Cloud path: stream from provider API ──────────────
+                    print(f"[Cloud] Routing to cloud model: {model_id}")
+                    for token in stream_cloud(model_id, messages, max_tokens=4096, temperature=temp):
                         token_queue.put(token)
                         if AGENT_STATE["stop_requested"] or cancel_event.is_set():
                             break
