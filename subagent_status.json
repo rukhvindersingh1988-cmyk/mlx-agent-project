@@ -36,8 +36,8 @@
     "timestamp": 1782668826.1987698
   },
   "QATester": {
-    "status": "CRASHED: attempted relative import with no known parent pac",
-    "timestamp": 1782673433.500617
+    "status": "RUNNING",
+    "timestamp": 1782675146.3143418
   },
   "TestAgent": {
     "status": "RUNNING",
@@ -85,6 +85,10 @@
   },
   "DocWriter": {
     "status": "RUNNING",
-    "timestamp": 1782673409.900059
+    "timestamp": 1782675146.314657
+  },
+  "Architect": {
+    "status": "RUNNING",
+    "timestamp": 1782675146.3131242
   }
 }

@@ -629,6 +629,7 @@ def _subagent_thread_runner(role: str, task: str):
         try:
             from cloud_runner import is_cloud_model, stream_cloud
             # Read active model ID from server settings if possible
+            # Read active model ID from server settings if possible
             active_model_id = "groq/llama-3.3-70b"  # Default to a high-quality cloud model
             
             # Look up if a custom model has been selected
@@ -637,15 +638,48 @@ def _subagent_thread_runner(role: str, task: str):
                 if os.path.exists(state_path):
                     with open(state_path, "r") as f:
                         session_data = json.load(f)
-                    # chat_sessions.json is structured as {"sessions": [...]}
                     sessions = session_data.get("sessions", [])
                     if sessions:
-                        # Inspect key items
                         last_session = sessions[-1]
-                        # Look for active model inside history or defaults
                         active_model_id = last_session.get("model_id", active_model_id)
             except:
                 pass
+
+            # Smart Load Balancing/Distribution across multiple subagents running in parallel
+            # We distribute parallel subagents across Groq and HF APIs to avoid rate limits
+            if is_cloud_model(active_model_id):
+                # Hash the role string to pick a model deterministically per agent type
+                # but distributed across different free providers
+                role_hash = sum(ord(c) for c in role)
+                load_balanced_options = [
+                    "groq/llama-3.3-70b",
+                    "hf/qwen-72b",
+                    "hf/llama-3.3-70b",
+                    "hf/deepseek-v3",
+                ]
+                
+                # Check which keys we actually have
+                from cloud_runner import get_secrets
+                secrets = get_secrets()
+                available_options = []
+                
+                # Always allow groq if key exists
+                if secrets.get("groq_api_key"):
+                    available_options.append("groq/llama-3.3-70b")
+                # Allow HF options if read token exists
+                if secrets.get("hf_read_token") or secrets.get("hf_api_key"):
+                    available_options.extend(["hf/qwen-72b", "hf/llama-3.3-70b", "hf/deepseek-v3"])
+                
+                if available_options:
+                    selected_model = available_options[role_hash % len(available_options)]
+                    # Only override active_model_id if it's default to let users explicitly target a model if desired
+                    # But if they run a general parallel swarm, distribute them cleanly.
+                    if active_model_id == "groq/llama-3.3-70b" or active_model_id not in available_options:
+                        active_model_id = selected_model
+                        print(f"[Swarm Balancer] Distributed subagent '{role}' to model '{active_model_id}'")
+            except Exception as swarm_err:
+                print(f"[Swarm Balancer] Balancer error, fallback to {active_model_id}: {swarm_err}")
+
                 
             if is_cloud_model(active_model_id):
                 # System prompt teaching subagent tool call format

@@ -169,6 +169,10 @@
     {
       "from": "MainAgent",
       "message": "Write 3 simple pytest tests for a function called add(a, b) and save to user_projects/qa_tester_output.py"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write pytest tests for a Python class called WebScraper that has a method scrape(url) returning a dict with 'title' and 'links' keys. Mock the requests.get call. Save to user_projects/web_scraper/test_scraper.py"
     }
   ],
   "CodeArchitectSync": [
@@ -223,6 +227,16 @@
     {
       "from": "MainAgent",
       "message": "Write a README.md for a Python CLI task manager and save to user_projects/docwriter_output.md"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a README.md for a Python web scraper package called 'webscraper'. Include: description, install instructions (pip install requests beautifulsoup4), usage example, and API docs for WebScraper.scrape(). Save to user_projects/web_scraper/README.md"
+    }
+  ],
+  "Architect": [
+    {
+      "from": "MainAgent",
+      "message": "Write a Python web scraper class using requests + BeautifulSoup that fetches a URL, extracts all links and page title, and returns a dict. Save to user_projects/web_scraper/scraper.py"
     }
   ]
 }
