@@ -637,31 +637,103 @@ def _subagent_thread_runner(role: str, task: str):
                 if os.path.exists(state_path):
                     with open(state_path, "r") as f:
                         session_data = json.load(f)
-                    # Use the last session's model if available
-                    if isinstance(session_data, list) and len(session_data) > 0:
-                        active_model_id = session_data[-1].get("model_id", active_model_id)
+                    # chat_sessions.json is structured as {"sessions": [...]}
+                    sessions = session_data.get("sessions", [])
+                    if sessions:
+                        # Inspect key items
+                        last_session = sessions[-1]
+                        # Look for active model inside history or defaults
+                        active_model_id = last_session.get("model_id", active_model_id)
             except:
                 pass
                 
             if is_cloud_model(active_model_id):
-                system_prompt = f"You are an expert AI Subagent role-playing as: {role}. Assist the main agent. Answer the user prompt directly."
+                # Teach the subagent how to use tools to modify files in the user's workspace
+                system_prompt = (
+                    f"You are an expert AI Subagent role-playing as: {role}. Assist the main agent.\n"
+                    "You have direct access to the user's local filesystem and terminal via tools.\n"
+                    "To use a tool, you MUST output a standard JSON block wrapped in a markdown ```json code block. After outputting the tool call, STOP generating immediately.\n\n"
+                    "Available tools:\n"
+                    "- write_file(path, content): Create a new file with the specified content.\n"
+                    "- run_command(command): Run a shell command in the workspace directory.\n\n"
+                    "Example tool call format:\n"
+                    "```json\n"
+                    "{\n"
+                    "  \"tool\": \"write_file\",\n"
+                    "  \"args\": {\n"
+                    "    \"path\": \"user_projects/hello.py\",\n"
+                    "    \"content\": \"print('hello')\"\n"
+                    "  }\n"
+                    "}\n"
+                    "```\n"
+                )
+                
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": task}
                 ]
                 
                 print(f"[Subagent] '{role}' running online via cloud model '{active_model_id}'...")
+                
+                # Run the agent-loop inside the subagent thread to parse and execute its tools
+                loop_count = 0
+                max_subagent_loops = 5
                 response_text = ""
-                for token_chunk in stream_cloud(active_model_id, messages, max_tokens=2048, temperature=0.2):
-                    if "[ERROR]" in token_chunk or "[GROQ" in token_chunk:
-                        raise ValueError(token_chunk)
-                    response_text += token_chunk
+                
+                while loop_count < max_subagent_loops:
+                    loop_count += 1
+                    chunk_text = ""
+                    for token_chunk in stream_cloud(active_model_id, messages, max_tokens=2048, temperature=0.2):
+                        if "[ERROR]" in token_chunk or "[GROQ" in token_chunk:
+                            raise ValueError(token_chunk)
+                        chunk_text += token_chunk
+                    
+                    response_text += chunk_text
+                    
+                    # Parse tool call if present in chunk
+                    from agent import extract_tool_call
+                    tool_data = extract_tool_call(chunk_text)
+                    if tool_data and "tool" in tool_data:
+                        tname = tool_data["tool"]
+                        targs = tool_data.get("args", {})
+                        print(f"[Subagent Tool] '{role}' requested tool '{tname}' with args {targs}")
+                        
+                        # Translate write_file to write_to_file or correct format
+                        if tname == "write_file":
+                            tname = "write_to_file"
+                            targs = {
+                                "TargetFile": os.path.abspath(os.path.join(resolve_path("."), targs.get("path", ""))),
+                                "CodeContent": targs.get("content", ""),
+                                "Overwrite": True,
+                                "Description": "Created by subagent"
+                            }
+                        elif tname == "run_command":
+                            targs = {
+                                "CommandLine": targs.get("command", ""),
+                                "Cwd": resolve_path("."),
+                                "WaitMsBeforeAsync": 5000
+                            }
+                            
+                        # Execute the tool
+                        try:
+                            result_out = execute_tool(tname, targs)
+                            print(f"[Subagent Tool Result] Done: {str(result_out)[:200]}")
+                        except Exception as tool_err:
+                            result_out = f"Error running tool: {tool_err}"
+                            print(f"[Subagent Tool Result] Fail: {result_out}")
+                            
+                        messages.append({"role": "assistant", "content": chunk_text})
+                        messages.append({"role": "user", "content": f"TOOL RESULT ({tname}):\n{result_out}"})
+                    else:
+                        break # Normal text response, no tool calls
                 
                 if response_text.strip():
                     subagent_result["text"] = response_text
                     success = True
                     print(f"[Subagent] '{role}' successfully processed online via '{active_model_id}'.")
         except Exception as api_err:
+            import traceback
+            traceback.print_exc()
             print(f"[Subagent] Cloud API execution failed for '{role}': {api_err}. Falling back to local MLX engine...")
 
         # 2. Local fallback using local MLX engine
