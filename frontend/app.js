@@ -80,6 +80,22 @@ function setupEventListeners() {
         }
     });
 
+    // Restart Server Button
+    const restartServerBtn = document.getElementById("restart-server-btn");
+    if (restartServerBtn) {
+        restartServerBtn.addEventListener("click", async () => {
+            restartServerBtn.textContent = "Restarting... Please wait.";
+            restartServerBtn.style.opacity = "0.7";
+            restartServerBtn.disabled = true;
+            try {
+                await fetch("/api/restart", { method: "POST" });
+            } catch (err) {
+                console.error("Restart API triggered.", err);
+            }
+            // The python backend will os.execv, causing the window to instantly close and reopen.
+        });
+    }
+
     // New Chat Button
     newChatBtn.addEventListener("click", () => {
         currentSessionId = crypto.randomUUID();
@@ -1614,12 +1630,12 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Also add the default cloud open-source option
         const cloudOpt = document.createElement("option");
-        cloudOpt.value = "Qwen/Qwen2.5-Coder-7B-Instruct";
-        cloudOpt.textContent = "Qwen 2.5 Coder 7B (Free HF Cloud API)";
+        cloudOpt.value = "meta-llama/Meta-Llama-3.1-405B-Instruct";
+        cloudOpt.textContent = "Llama 3.1 405B (Free HF Cloud API)";
         swarmModelSelector.insertBefore(cloudOpt, swarmModelSelector.firstChild);
         
         // Default to cloud option for easy testing
-        swarmModelSelector.value = "Qwen/Qwen2.5-Coder-7B-Instruct";
+        swarmModelSelector.value = "meta-llama/Meta-Llama-3.1-405B-Instruct";
     };
 
     // Watch for model updates

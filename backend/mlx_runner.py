@@ -1,4 +1,7 @@
 import os
+# Force Hugging Face Hub to offline mode to load local cached models instantly
+os.environ["HF_HUB_OFFLINE"] = "1"
+
 import gc
 import threading
 from typing import Dict, List, Generator, Optional, Any
@@ -55,14 +58,48 @@ class MLXRunner:
                         print(f"[MLX] Loaded as VLM (Vision): '{model_id}'!")
                     except ImportError:
                         print(f"[MLX] mlx_vlm not installed. Falling back to text-only for '{model_id}'.")
-                        self.model, self.tokenizer = load(model_id)
+                        adapter_path = None
+                        if os.path.exists("adapters/adapters.safetensors") and os.path.exists("adapters/adapter_config.json"):
+                            try:
+                                import json
+                                with open("adapters/adapter_config.json", "r") as f:
+                                    cfg = json.load(f)
+                                base_model = cfg.get("model", "")
+                                if base_model and (base_model.lower() in model_id.lower() or model_id.lower() in base_model.lower()):
+                                    adapter_path = "adapters"
+                                    print(f"[MLX] Nightly LoRA found! Fusing '{adapter_path}' into brain...")
+                                else:
+                                    print(f"[MLX] Skipping adapters: base model '{base_model}' does not match active model '{model_id}'")
+                            except Exception as e:
+                                print(f"[MLX] Error checking adapter config: {e}")
+                        self.model, self.tokenizer = load(model_id, adapter_path=adapter_path, lazy=True)
                         self.is_vlm = False
                 else:
-                    self.model, self.tokenizer = load(model_id)
-                    self.is_vlm = False
+                    adapter_path = None
+                    if os.path.exists("adapters/adapters.safetensors") and os.path.exists("adapters/adapter_config.json"):
+                        try:
+                            import json
+                            with open("adapters/adapter_config.json", "r") as f:
+                                cfg = json.load(f)
+                            base_model = cfg.get("model", "")
+                            if base_model and (base_model.lower() in model_id.lower() or model_id.lower() in base_model.lower()):
+                                adapter_path = "adapters"
+                                print(f"[MLX] Nightly LoRA found! Fusing '{adapter_path}' into brain...")
+                            else:
+                                print(f"[MLX] Skipping adapters: base model '{base_model}' does not match active model '{model_id}'")
+                        except Exception as e:
+                            print(f"[MLX] Error checking adapter config: {e}")
                     
+                    # Clean cache and garbage collect before load
+                    gc.collect()
+                    mx.clear_cache()
+                    self.model, self.tokenizer = load(model_id, adapter_path=adapter_path, lazy=True)
+                    self.is_vlm = False
                 self.current_model_id = model_id
                 print(f"[MLX] Successfully loaded '{model_id}'!")
+                
+                self.draft_model = None
+                    
                 return self.model, self.tokenizer
             except Exception as e:
                 print(f"[MLX] Error loading model '{model_id}': {str(e)}")
@@ -70,6 +107,8 @@ class MLXRunner:
                 self.tokenizer = None
                 self.processor = None
                 self.current_model_id = None
+                self.draft_model = None
+                self.kv_cache = None
                 self.is_vlm = False
                 gc.collect()
                 raise e
@@ -133,11 +172,11 @@ class MLXRunner:
                             formatted_prompt,
                             image=image_path if num_images > 0 else None,
                             max_tokens=max_tokens,
-                            temperature=temp,
-                            verbose=False
+                            sampler=sampler
                         ):
                             if cancel_event and cancel_event.is_set():
                                 break
+                            
                             token = response.text
                             accumulated += token
                             
@@ -162,16 +201,25 @@ class MLXRunner:
                         yield f"[VLM Generation Error: {str(e)}]"
                         return
 
-                # Standard text-only model generation using mlx_lm
+                # Text-only path: Reverted to stable engine
+                from mlx_lm import stream_generate
+                
+                # Check template support
+                if hasattr(tokenizer, "apply_chat_template") and isinstance(prompt, list):
+                    prompt_text = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
+                else:
+                    prompt_text = prompt
+
                 for response in stream_generate(
-                    model=model,
-                    tokenizer=tokenizer,
-                    prompt=prompt if isinstance(prompt, str) else tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True),
-                    sampler=sampler,
-                    max_tokens=max_tokens
+                    self.model,
+                    self.tokenizer,
+                    prompt_text,
+                    max_tokens=max_tokens,
+                    sampler=sampler
                 ):
                     if cancel_event and cancel_event.is_set():
                         break
+                    
                     token = response.text
                     accumulated += token
                     
@@ -224,7 +272,18 @@ def list_downloaded_models() -> List[str]:
     except Exception as e:
         print(f"[MLX Hub Scanner] Error scanning HF cache: {str(e)}")
         
-    return sorted(list(set(downloaded)))
+    downloaded = list(set(downloaded))
+    
+    # Sort to ensure preferred models (like Gemma 9B) appear first in the UI
+    def sort_key(model_id):
+        lower_id = model_id.lower()
+        if "gemma-2-9b" in lower_id:
+            return 0
+        if "qwen2.5-coder-7b" in lower_id:
+            return 1
+        return 99
+        
+    return sorted(downloaded, key=sort_key)
 
 def run_download_thread(model_id: str):
     """Worker function to download model in the background."""

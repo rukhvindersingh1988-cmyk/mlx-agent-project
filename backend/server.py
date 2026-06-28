@@ -20,16 +20,10 @@ from .agent import run_agent_loop, AGENT_STATE
 # Popular models to recommend
 POPULAR_MODELS = [
     {
-        "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-        "name": "Qwen 2.5 Coder 7B (4-bit)",
-        "description": "Recommended for coding. SOTA local code generation and tool execution. Fits comfortably in 16GB RAM.",
-        "size": "approx 4.5 GB"
-    },
-    {
-        "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-        "name": "Qwen 2.5 Coder 7B (4-bit)",
-        "description": "Recommended for coding. SOTA local code generation and tool execution. Fits comfortably in 16GB RAM.",
-        "size": "approx 4.5 GB"
+        "id": "mlx-community/gemma-2-9b-it-4bit",
+        "name": "Gemma 2 9B (4-bit)",
+        "description": "Google's 9B model. Extremely powerful logic and orchestration. Perfect for a 16GB Mac.",
+        "size": "approx 6.0 GB"
     },
     {
         "id": "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
@@ -193,6 +187,20 @@ async def run_swarm_route(req: SwarmRunRequest):
             return {"status": "error", "message": "Benchmark report was not generated."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/restart")
+def restart_server_route():
+    """Restart the Python backend process and UI window."""
+    print("[Server] Restart requested via UI. Rebooting application...")
+    import sys
+    import os
+    # We delay execution slightly so the HTTP response can be sent first
+    def do_restart():
+        os.execv(sys.executable, ['python'] + sys.argv)
+    
+    import threading
+    threading.Timer(0.5, do_restart).start()
+    return {"status": "success", "message": "Restarting..."}
 
 import re
 

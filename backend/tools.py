@@ -22,6 +22,15 @@ active_subprocesses = []
 active_subprocesses_lock = threading.Lock()
 
 def run_subprocess_managed(command: str, shell: bool = True, cwd: str = None, timeout: float = None, env: dict = None) -> subprocess.CompletedProcess:
+    if env is None:
+        env = os.environ.copy()
+        # Explicitly inject common macOS paths since /bin/sh doesn't source .zshrc
+        current_path = env.get("PATH", "")
+        for p in ["/opt/homebrew/bin", "/usr/local/bin"]:
+            if p not in current_path:
+                current_path = f"{p}:{current_path}"
+        env["PATH"] = current_path
+        
     proc = subprocess.Popen(
         command,
         shell=shell,
@@ -107,6 +116,7 @@ def run_command(command: str) -> str:
 
 def read_file(relative_path: str, start_line: int = 1, end_line: Optional[int] = None) -> str:
     try:
+        relative_path = str(relative_path)
         file_path = resolve_path(relative_path)
         if not os.path.exists(file_path):
             return f"Error: File '{relative_path}' does not exist at path: {file_path}"
@@ -128,6 +138,62 @@ def read_file(relative_path: str, start_line: int = 1, end_line: Optional[int] =
         return f"--- Reading '{relative_path}' (Lines {start}-{end} of {total_lines}) ---\n" + content
     except Exception as e:
         return f"Error reading file: {str(e)}"
+
+def search_knowledge_bank(query: str) -> str:
+    try:
+        import math
+        from collections import Counter
+        import re
+        
+        kb_dir = resolve_path("knowledge_bank")
+        if not os.path.exists(kb_dir):
+            return "Knowledge bank directory does not exist."
+            
+        query_words = set(re.findall(r'\w+', query.lower()))
+        if not query_words:
+            return "Invalid query."
+            
+        chunks = []
+        for filename in os.listdir(kb_dir):
+            if not filename.endswith(".md"): continue
+            filepath = os.path.join(kb_dir, filename)
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            
+            # Split by double newline to get paragraphs/sections
+            paragraphs = text.split("\n\n")
+            for i, p in enumerate(paragraphs):
+                if len(p.strip()) < 30: continue
+                
+                p_lower = p.lower()
+                # Simple keyword overlap score
+                score = sum(1 for w in query_words if w in p_lower)
+                
+                if score > 0:
+                    chunks.append((score, filename, p.strip()))
+                    
+        if not chunks:
+            return f"No results found in knowledge bank for: {query}"
+            
+        # Sort descending by score
+        chunks.sort(key=lambda x: x[0], reverse=True)
+        
+        # Deduplicate and take top 3
+        top_chunks = []
+        seen = set()
+        for score, fname, content in chunks:
+            if content not in seen:
+                seen.add(content)
+                top_chunks.append((score, fname, content))
+            if len(top_chunks) >= 3:
+                break
+                
+        res = f"--- Top 3 Knowledge Bank Results for '{query}' ---\n\n"
+        for score, fname, content in top_chunks:
+            res += f"[Source: {fname} (Match Score: {score})]\n{content}\n\n"
+        return res.strip()
+    except Exception as e:
+        return f"Error searching knowledge bank: {e}"
 
 def write_file(relative_path: str, content: str) -> str:
     try:
@@ -211,6 +277,43 @@ def replace_file_content(relative_path: str, search_content: str, replacement_co
         return f"Success: Replaced 1 block in '{relative_path}'. A backup was saved as '{relative_path}.bak'."
     except Exception as e:
         return f"Error editing file: {str(e)}"
+
+def edit_lines(relative_path: str, start_line: int, end_line: int, new_content: str) -> str:
+    try:
+        # Self-preservation firewall
+        restricted = ['frontend', 'backend', 'models', 'knowledge_bank', 'app.py', 'run.sh']
+        parts = pathlib.Path(relative_path).parts
+        if parts and parts[0] in restricted:
+            return f"Error: Attempted to edit core agent file '{relative_path}'. Self-preservation rule engaged. Please place user projects in a new directory (e.g., 'user_projects/')."
+            
+        file_path = resolve_path(relative_path)
+        if not os.path.exists(file_path):
+            return f"Error: File '{relative_path}' does not exist."
+            
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            
+        if start_line < 1 or end_line > len(lines) or start_line > end_line:
+            return f"Error: Invalid line range {start_line}-{end_line}. File has {len(lines)} lines."
+            
+        # Create a backup before editing
+        backup_path = file_path + ".bak"
+        shutil.copy2(file_path, backup_path)
+        
+        # Replace the lines (0-indexed for python arrays)
+        # Ensure new_content ends with a newline if it doesn't
+        if new_content and not new_content.endswith('\n'):
+            new_content += '\n'
+            
+        lines[start_line - 1 : end_line] = [new_content]
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+            
+        return f"Success: Replaced lines {start_line} to {end_line} in '{relative_path}'. A backup was saved as '{relative_path}.bak'."
+    except Exception as e:
+        return f"Error editing lines: {str(e)}"
+
 
 def list_dir(relative_path: str = ".") -> str:
     try:
@@ -525,8 +628,15 @@ def _subagent_thread_runner(role: str, task: str):
         # 1. Try free online open-source models first to prevent GPU memory/thread conflicts
         try:
             from huggingface_hub import InferenceClient
-            token = os.environ.get("HF_TOKEN") or None
-            online_model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+            token = os.environ.get("HF_TOKEN")
+            if not token:
+                try:
+                    with open(resolve_path("secrets.json"), "r") as f:
+                        token = json.load(f).get("hf_token")
+                except:
+                    pass
+            
+            online_model = "Qwen/Qwen2.5-72B-Instruct"
             client = InferenceClient(model=online_model, token=token)
             
             system_prompt = f"You are a Subagent with the role: {role}. Your job is to assist the main agent. Answer the user prompt directly."
@@ -565,7 +675,7 @@ def _subagent_thread_runner(role: str, task: str):
                 print(f"[Subagent] '{role}' acquired GPU lock. Running local inference...")
                 asyncio.run(run_agent_loop(
                     user_prompt=task,
-                    model_id="mlx-community/Qwen2.5-7B-Instruct-4bit",  # Default model for subagents
+                    model_id="mlx-community/gemma-2-9b-it-4bit",  # Default model for subagents
                     ws_send_callback=subagent_callback,
                     role=role
                 ))
@@ -820,6 +930,11 @@ TOOLS_MANIFEST = [
         "parameters": {"relative_path": "Path to the file relative to the workspace root.", "start_line": "Optional. The starting line number (1-indexed). Defaults to 1.", "end_line": "Optional. The ending line number (inclusive, 1-indexed)."}
     },
     {
+        "name": "search_knowledge_bank",
+        "description": "Ultra-fast local RAG tool. Instantly searches all Subagent Knowledge Bank Markdown files for a conceptual query and returns the top 3 most relevant paragraphs. ALWAYS use this first when asked a conceptual question.",
+        "parameters": {"query": "The keyword or concept to search for."}
+    },
+    {
         "name": "write_file",
         "description": "Write a new file or completely overwrite an existing file with the provided content.",
         "parameters": {"relative_path": "Path to save the file, relative to the workspace root.", "content": "The full string content to write to the file."}
@@ -831,6 +946,16 @@ TOOLS_MANIFEST = [
             "relative_path": "Path to the file relative to the workspace root.",
             "search_content": "The exact block of text inside the file to replace.",
             "replacement_content": "The block of text to put in place of the search_content."
+        }
+    },
+    {
+        "name": "edit_lines",
+        "description": "Make a targeted edit to a file by replacing a specific range of line numbers. Much more reliable than replace_file_content because it doesn't require matching exact text spacing.",
+        "parameters": {
+            "relative_path": "Path to the file relative to the workspace root.",
+            "start_line": "The starting line number to replace (1-indexed).",
+            "end_line": "The ending line number to replace (inclusive).",
+            "new_content": "The new content to insert in place of the specified lines."
         }
     },
     {
@@ -915,11 +1040,25 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
         # Normalize all argument keys to lowercase to gracefully handle LLM capitalization hallucinations
         args = {k.lower(): v for k, v in args.items()}
         
+        # Parameter Name Alias Normalization:
+        # Map alternate path parameters to 'relative_path'
+        for path_key in ["path", "absolutepath", "directorypath", "search_path", "file_path", "filepath"]:
+            if path_key in args:
+                if "relative_path" not in args or isinstance(args["relative_path"], bool):
+                    args["relative_path"] = args[path_key]
+        # Map alternate content parameters to 'content'
+        for content_key in ["codecontent", "code_content", "text", "replacementcontent"]:
+            if content_key in args:
+                if "content" not in args or isinstance(args["content"], bool):
+                    args["content"] = args[content_key]
+        
         if name == "run_command": return run_command(args["command"])
         elif name == "read_file": return read_file(args["relative_path"], args.get("start_line", 1), args.get("end_line"))
         elif name == "write_file": return write_file(args["relative_path"], args["content"])
         elif name == "replace_file_content": return replace_file_content(args["relative_path"], args["search_content"], args["replacement_content"])
+        elif name == "edit_lines": return edit_lines(args["relative_path"], int(args["start_line"]), int(args["end_line"]), args["new_content"])
         elif name == "list_dir": return list_dir(args.get("relative_path", "."))
+        elif name == "search_knowledge_bank": return search_knowledge_bank(args["query"])
         elif name == "web_search": return web_search(args["query"])
         elif name == "web_fetch": return web_fetch(args["url"])
         elif name == "gmail_list_emails": return gmail_list_emails(args.get("max_emails", 5), args.get("folder", "INBOX"))

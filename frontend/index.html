@@ -14,8 +14,9 @@
     <div class="app-container">
         <!-- New Clean Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <button id="new-chat-btn" class="new-chat-button">
+            <div class="sidebar-header" style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
+                <img src="/static/logo_compressed.jpg" alt="Antigravity Logo" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 12px rgba(0, 255, 204, 0.3); border: 1px solid rgba(255,255,255,0.1);">
+                <button id="new-chat-btn" class="new-chat-button" style="width: 100%;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -310,6 +311,13 @@
                         </div>
                     </div>
                     <div class="info-note" id="stats-cores-display">Cores: Loading...</div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="settings-group stats-section" style="border: 1px solid #ff4a4a; background: rgba(255, 74, 74, 0.05);">
+                    <h3 style="color: #ff4a4a;">System Restart</h3>
+                    <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 12px; margin-top: -6px;">Restart the entire AI engine to clear unified memory or apply backend updates.</p>
+                    <button id="restart-server-btn" style="width: 100%; padding: 10px; background: #ff4a4a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Force Restart Application</button>
                 </div>
 
             </div>

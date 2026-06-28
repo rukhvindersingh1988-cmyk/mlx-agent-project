@@ -1,0 +1,92 @@
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]Fetching 6 files: 100%|██████████| 6/6 [00:00<00:00, 4138.44it/s]
+Calculating loss...:   0%|          | 0/3 [00:00<?, ?it/s]Calculating loss...:  33%|███▎      | 1/3 [00:06<00:12,  6.28s/it]Calculating loss...:  67%|██████▋   | 2/3 [00:06<00:02,  2.80s/it]Calculating loss...: 100%|██████████| 3/3 [00:14<00:00,  4.96s/it]Calculating loss...: 100%|██████████| 3/3 [00:14<00:00,  4.72s/it]
+libc++abi: terminating due to uncaught exception of type std::runtime_error: [METAL] Command buffer execution failed: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)
+/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/nightly_train.sh: line 30: 42666 Abort trap: 6           .venv/bin/python -m mlx_lm.lora --model mlx-community/gemma-2-9b-it-4bit --train --data training_data --iters 200 --batch-size 1 --adapter-path adapters --save-every 50 --test
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/multiprocessing/resource_tracker.py:475: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-y3upvj6p'}
+  warnings.warn(
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]Fetching 6 files: 100%|██████████| 6/6 [00:00<00:00, 117597.31it/s]
+Calculating loss...:   0%|          | 0/10 [00:00<?, ?it/s]Calculating loss...:  10%|█         | 1/10 [00:20<03:06, 20.69s/it]Calculating loss...:  20%|██        | 2/10 [00:22<01:17,  9.68s/it]Calculating loss...:  30%|███       | 3/10 [20:52<1:06:08, 566.97s/it]Calculating loss...:  40%|████      | 4/10 [25:18<44:47, 447.99s/it]  Calculating loss...:  40%|████      | 4/10 [25:18<37:57, 379.60s/it]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/lora.py", line 377, in <module>
+    main()
+    ~~~~^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/lora.py", line 369, in main
+    run(types.SimpleNamespace(**args))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/lora.py", line 341, in run
+    train_model(args, model, train_set, valid_set, training_callback)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/lora.py", line 295, in train_model
+    train(
+    ~~~~~^
+        model=model,
+        ^^^^^^^^^^^^
+    ...<4 lines>...
+        training_callback=training_callback,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tuner/trainer.py", line 290, in train
+    val_loss = evaluate(
+        model=model,
+    ...<5 lines>...
+        iterate_batches=iterate_batches,
+    )
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tuner/trainer.py", line 192, in evaluate
+    for _, batch in tqdm(
+                    ~~~~^
+        zip(
+        ^^^^
+    ...<9 lines>...
+        total=min(len(dataset) // batch_size, num_batches),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+               ^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tuner/trainer.py", line 143, in iterate_batches
+    batch = [dataset[j] for j in batch_idx[i]]
+             ~~~~~~~^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tuner/datasets.py", line 168, in __getitem__
+    self._proc_data[idx] = self._data.process(self._data[idx])
+                           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tuner/datasets.py", line 60, in process
+    tokens = self.tokenizer.apply_chat_template(
+        messages,
+        tools=tools,
+        return_dict=False,
+    )
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/mlx_lm/tokenizer_utils.py", line 346, in apply_chat_template
+    return self._tokenizer.apply_chat_template(*args, tokenize=tokenize, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/transformers/tokenization_utils_base.py", line 3107, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+                                        ~~~~~~~~~~~~~~~~~~~~~^
+        conversations=conversations,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **template_kwargs,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/transformers/utils/chat_template_utils.py", line 581, in render_jinja_template
+    rendered_chat = compiled_template.render(
+        messages=chat,
+    ...<3 lines>...
+        **kwargs,
+    )
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/jinja2/environment.py", line 1295, in render
+    self.environment.handle_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/jinja2/environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "<template>", line 1, in top-level template code
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/jinja2/sandbox.py", line 401, in call
+    return __context.call(__obj, *args, **kwargs)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/transformers/utils/chat_template_utils.py", line 479, in raise_exception
+    raise jinja2.exceptions.TemplateError(message)
+jinja2.exceptions.TemplateError: Conversation roles must alternate user/assistant/user/assistant/...

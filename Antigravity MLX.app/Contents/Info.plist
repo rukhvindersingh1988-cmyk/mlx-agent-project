@@ -5,7 +5,7 @@
     <key>CFBundleExecutable</key>
     <string>Antigravity MLX</string>
     <key>CFBundleIconFile</key>
-    <string></string>
+    <string>AppIcon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.antigravity.mlx</string>
     <key>CFBundleName</key>

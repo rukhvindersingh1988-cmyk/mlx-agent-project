@@ -9,7 +9,28 @@
       "message": "Review the sandboxing system in backend/tools.py. Do not install Homebrew or ripgrep. Simply list the directory contents using Python or find, and wait 30 seconds before checking your inbox for the auditor's findings."
     }
   ],
-  "MainAgent": [],
+  "MainAgent": [
+    {
+      "from": "Code Reviewer",
+      "message": "Subagent 'Code Reviewer' completed.\nResult: \ud83d\uded1 Stopped by user.\n\n<tool_code>\n```python\n```\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```python\n```p"
+    },
+    {
+      "from": "QATester",
+      "message": "Subagent 'QATester' completed.\nResult: Simulated general text answer."
+    },
+    {
+      "from": "QATester",
+      "message": "Subagent 'QATester' completed.\nResult: Simulated general text answer."
+    },
+    {
+      "from": "QATester",
+      "message": "Subagent 'QATester' completed.\nResult: Simulated general text answer."
+    },
+    {
+      "from": "QATester",
+      "message": "Subagent 'QATester' completed.\nResult: Simulated general text answer."
+    }
+  ],
   "CodeArchitect": [
     {
       "from": "MainAgent",
@@ -35,6 +56,84 @@
     {
       "from": "MainAgent",
       "message": "Calculate the square root of 144"
+    }
+  ],
+  "Researcher": [
+    {
+      "from": "MainAgent",
+      "message": "Write a Python script called fetch_crypto.py that uses the urllib.request module to fetch the current Bitcoin price from https://api.coindesk.com/v1/bpi/currentprice.json and saves it to btc_price.json."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Dive into the files and provide recommendations for efficiency improvements to my code and workflow."
+    }
+  ],
+  "Worker": [
+    {
+      "from": "MainAgent",
+      "message": "Complete the requested task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Complete the requested task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Complete the requested task"
+    }
+  ],
+  "SeniorDev": [
+    {
+      "from": "MainAgent",
+      "message": "Write a Python script that calculates the first 20 numbers of the Fibonacci sequence and prints them out."
+    }
+  ],
+  "BackendDev": [
+    {
+      "from": "MainAgent",
+      "message": "Write a Python script for a FastAPI server that has a single route /data returning {'status': 'ok', 'items': [1, 2, 3]}."
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a Python script for a FastAPI server that has a single route /data returning {'status': 'ok', 'items': [1, 2, 3]}"
+    }
+  ],
+  "FullStackArchitect": [
+    {
+      "from": "MainAgent",
+      "message": "Write a complete Python FastAPI WebSocket server in user_projects/multiplayer.py AND an HTML frontend in user_projects/static/index.html. The app must be a live Multiplayer Whiteboard where users can click and drag to draw lines on a canvas, and their drawings sync in real-time to all users via WebSockets!"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a complete Python FastAPI WebSocket server in user_projects/multiplayer.py AND an HTML frontend in user_projects/static/index.html. The app must be a live Multiplayer Whiteboard where users can click and drag to draw lines on a canvas, and their drawings sync in real-time to all users via WebSockets!"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Write a complete Python FastAPI WebSocket server in user_projects/multiplayer.py AND an HTML frontend in user_projects/static/index.html. The app must be a live Multiplayer Whiteboard where users can click and drag to draw lines on a canvas, and their drawings sync in real-time to all users via WebSockets!"
+    }
+  ],
+  "Code Reviewer": [
+    {
+      "from": "MainAgent",
+      "message": "Analyze the code for performance bottlenecks and accuracy issues. Provide suggestions for improvements."
+    }
+  ],
+  "QATester": [
+    {
+      "from": "MainAgent",
+      "message": "Simulated validation task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Simulated validation task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Simulated validation task"
+    },
+    {
+      "from": "MainAgent",
+      "message": "Simulated validation task"
     }
   ]
 }

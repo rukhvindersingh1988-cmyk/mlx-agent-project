@@ -27,10 +27,10 @@ load_env_file(WORKSPACE_DIR)
 
 # Default Free Open Source Models to use/fallback to
 DEFAULT_OS_MODELS = [
-    "Qwen/Qwen2.5-Coder-7B-Instruct",
-    "meta-llama/Llama-3.2-3B-Instruct",
-    "microsoft/Phi-3-mini-4k-instruct",
-    "Qwen/Qwen2.5-7B-Instruct"
+    "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    "mistralai/Mixtral-8x22B-Instruct-v0.1",
+    "deepseek-ai/DeepSeek-Coder-V2-Instruct",
+    "Qwen/Qwen1.5-110B-Chat"
 ]
 
 # Read custom models list from environment config if specified, e.g. HF_MODELS="model1,model2"

@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import ast
 import traceback
 import platform
 import datetime
@@ -117,7 +118,7 @@ def classify_task_complexity(user_prompt: str) -> str:
     return 'complex'
 
 # Stop sequences that tell the model to halt generation
-STOP_SEQUENCES = ["</tool_call>", "TOOL RESULT", "<|im_end|>", "<|endoftext|>", "<|im_start|>", "im_end", "<|im_start|>assistant", "<|im_start|>user"]
+STOP_SEQUENCES = ["</tool_call>", "TOOL RESULT", "<|im_end|>", "<|endoftext|>", "<|im_start|>", "im_end", "<|im_start|>assistant", "<|im_start|>user", "<end_of_turn>", "<start_of_turn>"]
 
 # Global flag to allow frontend to interrupt the agent loop
 # Using a dict to allow mutating the inner boolean across module imports
@@ -136,11 +137,13 @@ PREFERRED_VLM    = [
     "mlx-community/Qwen2.5-VL-3B-Instruct-4bit",
 ]
 PREFERRED_CODER  = [
+    "mlx-community/gemma-2-9b-it-4bit",
     "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
     "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
 ]
 PREFERRED_GENERAL = [
+    "mlx-community/gemma-2-9b-it-4bit",
     "mlx-community/Qwen2.5-7B-Instruct-4bit",
     "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit",
     "mlx-community/Llama-3.2-3B-Instruct-4bit",
@@ -167,6 +170,15 @@ def select_best_model(user_prompt: str, has_image: bool, requested_model: str) -
     """Return (best_model_id, reason_str_or_None).
     reason is None when no switch is needed."""
     downloaded = list_downloaded_models()
+
+    # If the requested model is already downloaded, respect the user's choice!
+    # (Only override if has_image is True and the requested model is not a VLM)
+    requested_is_vlm = "VL" in requested_model.upper() or "vision" in requested_model.lower()
+    if requested_model in downloaded:
+        if has_image and not requested_is_vlm:
+            pass
+        else:
+            return requested_model, None
 
     # 1. Image → must use VLM
     if has_image:
@@ -197,12 +209,36 @@ def select_best_model(user_prompt: str, has_image: bool, requested_model: str) -
     return requested_model, None
 
 
-def build_system_prompt(workspace: str, is_vlm: bool = False, role: str = "MainAgent", memory_entries: Optional[List[Dict[str, str]]] = None) -> str:
+def build_system_prompt(workspace: str, is_vlm: bool = False, role: str = "MainAgent", memory_entries: Optional[List[Dict[str, str]]] = None, model_id: str = "", simple_mode: bool = False) -> str:
     """Build a clean system prompt that teaches the model to behave like a precise agent.
     
     Args:
         memory_entries: Optional list of past conversation summaries to inject as long-term memory.
+        model_id: Optional active model ID to dynamically customize syntax format rules.
+        simple_mode: If True, strip auxiliary context (learnings, memories) to optimize KV cache.
     """
+
+    is_gemma = "gemma" in model_id.lower()
+
+    # Dynamic Formatting Instructions based on model capabilities
+    if is_gemma:
+        format_instructions = (
+            "To use a tool, you must output a JSON block inside <tool_call> tags:\n"
+            "<tool_call>\n"
+            "{\"tool\": \"tool_name\", \"args\": {\"param\": \"value\"}}\n"
+            "</tool_call>"
+        )
+        workflow_act = "2. **Act**: If you need a tool, output exactly ONE `<tool_call>` tag containing a valid JSON object after your thought, then STOP generating immediately."
+        critical_format_rule = "- Do NOT wrap the <tool_call> block in markdown backticks (```json). Use the raw XML tags directly."
+    else:
+        format_instructions = (
+            "To use a tool, you must output a JSON block wrapped in a standard markdown ```json code block. Do NOT use XML tags like <tool_call>:\n"
+            "```json\n"
+            "{\"tool\": \"tool_name\", \"args\": {\"param\": \"value\"}}\n"
+            "```"
+        )
+        workflow_act = "2. **Act**: If you need a tool, output exactly ONE ```json code block containing a valid JSON object after your thought, then STOP generating immediately."
+        critical_format_rule = "- Do NOT use XML tags like <tool_call> for your tool call. Use ONLY the ```json code block."
 
     # Compact tool signatures
     tool_lines = []
@@ -225,39 +261,60 @@ def build_system_prompt(workspace: str, is_vlm: bool = False, role: str = "MainA
     except Exception:
         pass
 
-    # Read past errors/learnings log to adapt and learn
-    learnings_block = ""
-    learnings_path = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/agent_learnings.json"
-    if os.path.exists(learnings_path):
-        try:
-            with open(learnings_path, "r", encoding="utf-8") as f:
-                learnings_data = json.load(f)
-            errors_list = learnings_data.get("errors", [])[-15:] # Load last 15 errors to keep prompt short
-            if errors_list:
-                learnings_lines = []
-                for idx, entry in enumerate(errors_list, 1):
-                    learnings_lines.append(f"{idx}. Tool '{entry.get('tool')}' failed with args: {entry.get('args')}. Output was: '{entry.get('error')[:250]}'")
-                learnings_block = "\n<past_failures_and_learnings>\n" + "\n".join(learnings_lines) + "\nAvoid making the same arguments/logic mistakes described above.\n</past_failures_and_learnings>\n"
-        except Exception as e:
-            print(f"[Agent Prompt] Error reading learnings: {e}")
+    if simple_mode:
+        learnings_block = ""
+        architect_rules = ""
+        memory_block = ""
+        user_dictionary_block = ""
+    else:
+        # Read past errors/learnings log to adapt and learn
+        learnings_block = ""
+        learnings_path = "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/agent_learnings.json"
+        if os.path.exists(learnings_path):
+            try:
+                with open(learnings_path, "r", encoding="utf-8") as f:
+                    learnings_data = json.load(f)
+                errors_list = learnings_data.get("errors", [])[-15:] # Load last 15 errors to keep prompt short
+                if errors_list:
+                    learnings_lines = []
+                    for idx, entry in enumerate(errors_list, 1):
+                        learnings_lines.append(f"{idx}. Tool '{entry.get('tool')}' failed with args: {entry.get('args')}. Output was: '{entry.get('error')[:250]}'")
+                    learnings_block = "\n<past_failures_and_learnings>\n" + "\n".join(learnings_lines) + "\nAvoid making the same arguments/logic mistakes described above.\n</past_failures_and_learnings>\n"
+            except Exception as e:
+                print(f"[Agent Prompt] Error reading learnings: {e}")
 
-    # Note: We do NOT inject the full text of all 15 architect rules into the system prompt
-    # because it will overwhelm local 7B models and cause them to forget the tool JSON format.
-    # Instead, we just tell the agent they exist.
-    architect_rules = """
+        # Note: We do NOT inject the full text of all 15 architect rules into the system prompt
+        # because it will overwhelm local 7B models and cause them to forget the tool JSON format.
+        # Instead, we just tell the agent they exist.
+        architect_rules = """
 <architect_rules>
 This project contains a generated Intelligence Layer. The directory `.agent/rules/` contains advanced architectural constraints and guidelines.
 If you are asked to make significant architectural changes, use your `list_dir` and `read_file` tools to read the relevant rule files before proceeding.
 </architect_rules>
 """
 
-    # Build persistent memory block from past conversations
-    memory_block = ""
-    if memory_entries:
-        memory_lines = []
-        for idx, entry in enumerate(memory_entries, 1):
-            memory_lines.append(f"{idx}. [{entry.get('timestamp', 'N/A')}] User asked: \"{entry.get('user_prompt', '')[:150]}\" → Agent answered: \"{entry.get('final_answer', '')[:150]}\"")
-        memory_block = "\n<long_term_memory>\nThese are summaries of your recent past conversations with this user. Use them to maintain continuity:\n" + "\n".join(memory_lines) + "\n</long_term_memory>\n"
+        # Build persistent memory block from past conversations
+        memory_block = ""
+        if memory_entries:
+            memory_lines = []
+            for idx, entry in enumerate(memory_entries, 1):
+                memory_lines.append(f"{idx}. [{entry.get('timestamp', 'N/A')}] User asked: \"{entry.get('user_prompt', '')[:150]}\" → Agent answered: \"{entry.get('final_answer', '')[:150]}\"")
+            memory_block = "\n<long_term_memory>\nThese are summaries of your recent past conversations with this user. Use them to maintain continuity:\n" + "\n".join(memory_lines) + "\n</long_term_memory>\n"
+
+        # User Dictionary / Slang Mapping
+        user_dictionary_block = ""
+        dict_path = os.path.join(workspace, "user_dictionary.json")
+        if os.path.exists(dict_path):
+            try:
+                with open(dict_path, "r", encoding="utf-8") as f:
+                    user_dict = json.load(f)
+                if user_dict:
+                    dict_lines = []
+                    for phrase, meaning in user_dict.items():
+                        dict_lines.append(f"- \"{phrase}\" means: {meaning}")
+                    user_dictionary_block = "\n<user_dictionary>\nThe user has a specific shorthand and slang. When they use the following phrases, this is exactly what they mean:\n" + "\n".join(dict_lines) + "\n</user_dictionary>\n"
+            except Exception as e:
+                print(f"[Agent Prompt] Error reading user_dictionary.json: {e}")
 
     if is_vlm:
         return f"""<identity>
@@ -293,12 +350,28 @@ The user is asking me to read an image. I am currently running as a text-only mo
             subagent_summary = get_subagents_summary()
         except:
             pass
-
+ 
+    workflow_think = "1. **Think**: Before taking ANY action or using any tool, you MUST write your reasoning inside `<thought> ... </thought>` tags." if is_gemma else "1. **Think**: Before taking ANY action or using any tool, write 1-2 sentences explaining your reasoning in plain text (do NOT use XML tags)."
+    
+    example_block = f"""User: "Check my git configuration"
+<thought>
+I need to check the user's git configuration by running 'git config --list' in the terminal.
+</thought>
+<tool_call>
+{example_tool_call}
+</tool_call>""" if is_gemma else f"""User: "Check my git configuration"
+I need to check the user's git configuration by running 'git config --list' in the terminal.
+```json
+{example_tool_call}
+```"""
+ 
     return f"""<identity>
 You are Antigravity MLX, a fully autonomous, local AI coding assistant running directly on the user's Apple Silicon Mac.
 You are NOT a cloud chatbot. You ALREADY have full terminal and filesystem access to the user's Mac right now via your tools.{role_instruction}
 You are pair programming with the USER to solve complex tasks.
-You operate as a highly independent Senior Software Engineer. You do not ask for permission to act—you simply act.
+You operate as a highly intuitive, elite Senior Software Architect. The user types very fast and often uses heavy typos, shorthand, and slang. NEVER correct their spelling. Instantly infer their technical intent from context and execute immediately without hesitation.
+
+KNOWLEDGE BANK: If the user asks a conceptual or technical question about a specialist topic, you MAY use `search_knowledge_bank` once to check for local knowledge. If the knowledge bank search does not return useful results, answer from your own knowledge using `final_answer` immediately. Do NOT call `search_knowledge_bank` or `read_file` more than once for the same topic.
 </identity>
 
 <environment>
@@ -313,29 +386,27 @@ You operate as a highly independent Senior Software Engineer. You do not ask for
 </subagents_status>
 {learnings_block}
 {memory_block}
+{user_dictionary_block}
 
 <tools>
 {tools_block}
 
 TOOL CALL FORMAT:
-To use a tool, you must output a JSON block inside <tool_call> tags:
-<tool_call>
-{{"tool": "tool_name", "args": {{"param": "value"}}}}
-</tool_call>
+{format_instructions}
 </tools>
 
 <rules>
 1. **Aesthetics & UI**: Prioritize beautiful, modern UI design. Use rich aesthetics, dynamic micro-animations, and premium styling (glassmorphism, modern typography). If an interface looks basic, you have failed.
 2. **Code Quality**: Write robust, modular, and extremely maintainable code. You are a senior engineer; do not cut corners.
 3. **Hyper-Autonomy**: Take initiative. Use your tools to actively explore, debug, and build without asking for permission.
-4. **Precision**: Your JSON tool calls must be absolutely flawless. Do not hallucinate or output text outside of the <thought> or <tool_call> tags.
+4. **Precision**: Your JSON tool calls must be absolutely flawless. Do not hallucinate or output text outside of the <thought> or tool block tags.
 5. **Contextual Awareness**: You are ALREADY connected to the user's Mac. If the user says "Connect to my mac", "Connect to github", or "Build this", DO NOT do a web search! Immediately use your `run_command` tool to run `ls`, check `git status`, or clone a repository. You must infer what they want to build and execute terminal commands to achieve it.
 6. **No Chatbot Habits**: Do not act like a naive chatbot. If a user request is vague, figure out the most logical technical action in their local workspace and execute it using a tool.
 </rules>
 {architect_rules}
 <workflow>
-1. **Think**: Before taking ANY action or using any tool, you MUST write your reasoning inside `<thought> ... </thought>` tags. 
-2. **Act**: If you need a tool, output exactly ONE `<tool_call>` tag containing a valid JSON object after your thought, then STOP generating immediately.
+{workflow_think}
+{workflow_act}
 3. **Analyze**: After receiving a TOOL RESULT, analyze it and either call another tool or give your final answer.
 4. **Finish**: When you have completed the task and verified it works, you MUST use the `final_answer` tool to end your turn.
 </workflow>
@@ -345,9 +416,7 @@ User: "Check my git configuration"
 <thought>
 I need to check the user's git configuration by running 'git config --list' in the terminal.
 </thought>
-<tool_call>
-{example_tool_call}
-</tool_call>
+{('<tool_call>\n' + example_tool_call + '\n</tool_call>') if is_gemma else ('```json\n' + example_tool_call + '\n```')}
 </example>
 {vision_example}
 
@@ -376,7 +445,7 @@ When writing code for the user:
 </coding_standards>
 
 <critical_rules>
-- STOP generating immediately after closing a `</tool_call>`. Never write text after it.
+- STOP generating immediately after closing a tool block. Never write text after it.
 - Use only ONE tool call per turn.
 - Always use exactly `<thought>` and `</thought>` tags to plan your next step. Never use variations like `<thoughtize>`, `<thoughtete>`, `<thought_plan>`, or `<thinking>`.
 - ERROR RECOVERY: If a tool returns an Error, read the stack trace, understand the failure inside your `<thought>` block, and try a different approach. Do not repeat the exact same failing tool call.
@@ -391,7 +460,12 @@ When writing code for the user:
 - VISION CAPABILITIES: If the user uploads an image and you are a text-only model, use `final_answer` to tell them to switch to 'mlx-community/Qwen2.5-VL-7B-Instruct-4bit' via the Settings gear icon.
 - PROACTIVE RESEARCH: Before starting any coding task, if you're unsure about a library or API, use `web_search` to look it up. Never guess syntax.
 - STEP-BY-STEP COMPLETION: For multi-step tasks, complete each step fully before moving to the next. Use `run_command` to verify each step works.
-</critical_rules>"""
+- ANTI-HALLUCINATION: NEVER generate terminal/ls output, file listings, timestamps, or stat data yourself. ONLY tools produce output. If you find yourself writing '-rw-r--@' or '0:0:0' - STOP and write a tool call instead.
+- ANTI-VERBAL-LOOP: NEVER repeat the same phrase, sentence, or JSON fragment more than once. If you catch yourself repeating 'I am a tool' or any phrase - STOP immediately and write a proper `<tool_call>` block.
+- TOOL NAMES: ONLY use EXACT tool names from this list: list_dir, read_file, write_file, run_command, search_knowledge_bank, web_search, web_fetch, grep_search, invoke_subagent, send_message, check_inbox, final_answer, wait, run_sandboxed, get_secret, set_secret. ANY other name is wrong.
+- MULTI-AGENT DELEGATION: For complex, multi-step, or parallel tasks, you MUST invoke specialized subagents using `invoke_subagent` to delegate work (e.g. testing, code review, documentation research) and coordinate with them using `send_message` and `check_inbox`.
+</critical_rules>
+"""
 
 
 def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -411,15 +485,40 @@ def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
         if parsed:
             return parsed
 
-    # Strategy 3: Any JSON with "tool" key
-    for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL):
-        parsed = try_parse_json(match.group(0))
-        if parsed and "tool" in parsed:
-            return parsed
+    # Remove thought stripping to prevent deleting valid JSON when model forgets </thought>
+    text_without_thoughts = text
+
+    # Strategy 3: Infinite-depth bracket matching for any JSON with "tool" key
+    start_idx = 0
+    while True:
+        try:
+            start = text_without_thoughts.index('{', start_idx)
+        except ValueError:
+            break
+            
+        depth = 0
+        for i in range(start, len(text_without_thoughts)):
+            if text_without_thoughts[i] == '{':
+                depth += 1
+            elif text_without_thoughts[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    parsed = try_parse_json(text_without_thoughts[start:i+1])
+                    if parsed and "tool" in parsed:
+                        return parsed
+                    break
+        
+        # If brackets never closed, it might be truncated. Pass to auto-repair.
+        if depth > 0:
+            parsed = try_parse_json(text_without_thoughts[start:])
+            if parsed and "tool" in parsed:
+                return parsed
+                
+        start_idx = start + 1
 
     # Strategy 4: Python-style function call e.g. run_command("brew install python")
     # This catches models that ignore JSON instructions and try to write code
-    func_match = re.search(r'([a-zA-Z0-9_]+)\(\s*[\'"](.*?)[\'"]\s*\)', text)
+    func_match = re.search(r'([a-zA-Z0-9_]+)\(\s*[\'"](.*?)[\'"]\s*\)', text_without_thoughts)
     if func_match:
         t_name = func_match.group(1)
         t_arg = func_match.group(2)
@@ -429,6 +528,15 @@ def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
                 params = list(t["parameters"].keys())
                 if params:
                     return {"tool": t_name, "args": {params[0]: t_arg}}
+
+    # Strategy 5: Catch hallucinated <tool_...> tags (e.g. <tool_suggesting_guide.md>)
+    # If the model invents its own XML tag, we parse it as a tool call so it naturally 
+    # receives a "Tool not found" error instead of causing an implicit final response.
+    hallucinated_tag = re.search(r'<(tool_[a-zA-Z0-9_\.\-]+)(?:\s|>|\()', text_without_thoughts)
+    if hallucinated_tag and hallucinated_tag.group(1) != "tool_call":
+        t_name = hallucinated_tag.group(1).replace("tool_", "")
+        t_name = t_name.split('.')[0] # Strip extensions like .md
+        return {"tool": t_name, "args": {}}
 
     return None
 
@@ -463,6 +571,14 @@ def try_parse_json(s: str) -> Optional[Dict]:
             return obj
     except json.JSONDecodeError:
         pass
+        
+    # Ast literal_eval for Python dictionaries that use single quotes instead of valid JSON double quotes
+    try:
+        obj = ast.literal_eval(s)
+        if isinstance(obj, dict):
+            return obj
+    except (ValueError, SyntaxError):
+        pass
 
     # Extract first balanced JSON object
     try:
@@ -481,6 +597,74 @@ def try_parse_json(s: str) -> Optional[Dict]:
     except (ValueError, json.JSONDecodeError):
         pass
 
+    # Gemma Auto-Repair: forcefully close truncated JSON
+    try:
+        if "{" in s:
+            start = s.index('{')
+            truncated = s[start:]
+            
+            # Strip trailing partial tags like </tool_call> or <|im_end|>
+            truncated = re.sub(r'</?[a-zA-Z_\|]+>?$', '', truncated).strip()
+            
+            # Ensure it is not a completely empty or trivial shell
+            if truncated == "{" or truncated == '{"':
+                return None
+
+            # Safe string quote balancer
+            def balance_quotes(t: str) -> str:
+                in_str = False
+                escape = False
+                for char in t:
+                    if char == '"' and not escape:
+                        in_str = not in_str
+                    escape = (char == '\\' and not escape)
+                if in_str:
+                    t += '"'
+                return t
+
+            def close_brackets(t: str) -> str:
+                stack = []
+                in_str = False
+                escape = False
+                for char in t:
+                    if char == '"' and not escape:
+                        in_str = not in_str
+                    elif not in_str:
+                        if char == '{': stack.append('}')
+                        elif char == '[': stack.append(']')
+                        elif char in '}]':
+                            if stack and stack[-1] == char:
+                                stack.pop()
+                    escape = (char == '\\' and not escape)
+                
+                # Append missing brackets in correct order
+                while stack:
+                    t += stack.pop()
+                return t
+            
+            # Balance quotes first, then close brackets
+            repaired = close_brackets(balance_quotes(truncated))
+            try:
+                obj = json.loads(repaired)
+                if isinstance(obj, dict):
+                    # Ensure a valid 'tool' key is present and not null
+                    if obj.get("tool"):
+                        print(f"[Agent] Auto-repaired truncated JSON successfully!")
+                        return obj
+            except json.JSONDecodeError:
+                # If missing colon/value in the middle of a key (e.g. {"args": {"re" })
+                try:
+                    repaired_with_null = close_brackets(balance_quotes(truncated) + ': null')
+                    obj = json.loads(repaired_with_null)
+                    if isinstance(obj, dict):
+                        if obj.get("tool"):
+                            print(f"[Agent] Auto-repaired truncated JSON (appended null) successfully!")
+                            return obj
+                except json.JSONDecodeError:
+                    pass
+    except Exception:
+        pass
+
     return None
 
 
@@ -495,11 +679,15 @@ def clean_response(text: str) -> str:
     text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
     text = re.sub(r'<tool_call>.*$', '', text, flags=re.DOTALL)
     text = re.sub(r'TOOL_CALL:\s*\{.*?\}', '', text, flags=re.DOTALL)
+    # Remove markdown code blocks (e.g. ```json ... ``` or ```python ... ```)
+    text = re.sub(r'```[a-z]*\n.*?\n```', '', text, flags=re.DOTALL)
+    text = re.sub(r'```[a-z]*\n.*$', '', text, flags=re.DOTALL)
     # Remove stray XML tags
     text = re.sub(r'</?tool_call>', '', text)
     text = re.sub(r'</?th[a-z_]*>?', '', text)
     # Remove special template formatting tokens if they leak into text output
     text = text.replace("<|im_end|>", "").replace("<|im_start|>", "")
+    text = text.replace("<end_of_turn>", "").replace("<start_of_turn>", "")
     # Remove leading "Assistant:" if model outputs it
     text = re.sub(r'^Assistant:\s*', '', text, flags=re.MULTILINE)
     # Clean excessive newlines
@@ -514,11 +702,13 @@ def get_thought_text(text: str) -> str:
     if match:
         return match.group(1).strip()
     
-    # Fallback: if no <thought> tag, extract everything before <tool_call>
     idx = text.find('<tool_call>')
     if idx >= 0:
         text = text[:idx]
     idx = text.find('TOOL_CALL:')
+    if idx >= 0:
+        text = text[:idx]
+    idx = text.find('```json')
     if idx >= 0:
         text = text[:idx]
         
@@ -527,6 +717,19 @@ def get_thought_text(text: str) -> str:
     text = re.sub(r'^Assistant:\s*', '', text, flags=re.MULTILINE)
     return text.strip()
 
+
+
+def format_clean_assistant_msg(raw_output: str, tool_data: Dict[str, Any], default_thought: str = "Executing tool.", is_gemma: bool = False) -> str:
+    """Format the assistant's message in the history using the model's preferred syntax."""
+    thought = get_thought_text(raw_output) or default_thought
+    if is_gemma:
+        if "<tool_call>" in raw_output:
+            return f"<thought>\n{thought}\n</thought>\n<tool_call>\n{json.dumps(tool_data, indent=2)}\n</tool_call>"
+        else:
+            return f"<thought>\n{thought}\n</thought>\n```json\n{json.dumps(tool_data, indent=2)}\n```"
+    else:
+        # Standard markdown format for non-gemma models (no XML tags)
+        return f"{thought}\n\n```json\n{json.dumps(tool_data, indent=2)}\n```"
 
 
 def count_previous_tool_calls(history: List[Dict[str, str]], tool_name: str, tool_args: Dict[str, Any]) -> int:
@@ -552,7 +755,7 @@ async def run_agent_loop(
     ws_send_callback: Callable[[Dict[str, Any]], Awaitable[None]],
     history: Optional[List[Dict[str, str]]] = None,
     temp: float = 0.2,
-    max_loops: int = 12,
+    max_loops: int = 20,
     image_path: Optional[str] = None,
     simple_model_id: Optional[str] = None,
     role: str = "MainAgent",
@@ -582,7 +785,13 @@ async def run_agent_loop(
         await ws_send_callback({"type": "model_switched", "model_id": best_model, "reason": switch_reason})
         await ws_send_callback({"type": "thought", "text": f"\n\n🔀 *[Router: Routed to `{best_model}` (reason: {switch_reason})]*\n\n"})
     model_id = best_model
+    is_gemma = "gemma" in model_id.lower()
     is_vlm = "VL" in model_id.upper() or "vision" in model_id.lower()
+
+    # ── Resolve Workspace ───────────────────────────────────────────────────
+    workspace = get_workspace()
+
+
 
     # ── Image guard: if still not a VLM and image attached, abort gracefully ──
     if has_image and not is_vlm:
@@ -603,14 +812,12 @@ async def run_agent_loop(
     if history is None:
         history = []
 
-    workspace = get_workspace()
-
     # ── Persistent Memory: Load past conversation summaries ────────────────
     memory_entries = load_memory(workspace)
     if memory_entries:
         print(f"[Memory] Loaded {len(memory_entries)} past conversation summaries")
 
-    system_prompt = build_system_prompt(workspace, is_vlm=is_vlm, role=role, memory_entries=memory_entries)
+    system_prompt = build_system_prompt(workspace, is_vlm=is_vlm, role=role, memory_entries=memory_entries, model_id=model_id, simple_mode=(not is_gemma))
 
     history.append({"role": "user", "content": user_prompt})
 
@@ -628,6 +835,15 @@ async def run_agent_loop(
     loop_count = 0
     while True:
         loop_count += 1
+        
+        # Enforce max loop count limit
+        if loop_count > max_loops:
+            print(f"[Agent] Loop limit {max_loops} reached. Forcing termination.")
+            await ws_send_callback({
+                "type": "error",
+                "message": f"Reached max loop limit ({max_loops}). Try a simpler request."
+            })
+            return
         
         # Check for real-time user steering instructions
         if incoming_queue and not incoming_queue.empty():
@@ -651,25 +867,45 @@ async def run_agent_loop(
         print(f"[Agent] Loop {loop_count}...")
 
         # Build messages without mutating history references
-        messages = [{"role": "system", "content": system_prompt}]
+        is_gemma = "gemma" in model_id.lower()
+        messages = [] if is_gemma else [{"role": "system", "content": system_prompt}]
+        system_injected = False if is_gemma else True
+
         for i, m in enumerate(history):
-            if not is_vlm and m["role"] == "assistant" and "<tool_call>" not in m["content"]:
-                # If it already contains a valid JSON matching extract_tool_call, wrap it nicely
-                parsed_tc = extract_tool_call(m["content"])
-                if parsed_tc:
-                    mock_content = f"<thought>\nReconstructed history of last action.\n</thought>\n<tool_call>\n{json.dumps(parsed_tc)}\n</tool_call>"
-                    messages.append({"role": "assistant", "content": mock_content})
-                else:
-                    # The VLM outputs plain text (or just thoughts). The Coder model will break character if it sees history without a tool call.
-                    # Wrap the plain text in a thought and dummy final_answer so the Coder model stays in agent mode!
-                    mock_content = f"<thought>\n{m['content']}\n</thought>\n<tool_call>\n{{\"tool\": \"final_answer\", \"args\": {{\"message\": \"{m['content'][:50]}...\"}}}}\n</tool_call>"
-                    messages.append({"role": "assistant", "content": mock_content})
+            msg_content = m["content"]
+            
+            # Gemma models don't support the 'system' role, so we prepend it to the first user message (skipped for Gemma LoRA)
+            if not system_injected and m["role"] == "user":
+                msg_content = f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\nUSER PROMPT:\n{msg_content}"
+                system_injected = True
+
+            if not is_vlm and m["role"] == "assistant":
+                # Gemma strictly enforces XML tag compliance; clean up/reconstruct formatting if missing
+                if is_gemma and "<tool_call>" not in msg_content:
+                    parsed_tc = extract_tool_call(msg_content)
+                    if parsed_tc:
+                        true_thought = get_thought_text(msg_content)
+                        if not true_thought:
+                            true_thought = "Reconstructed history of last action."
+                        mock_content = f"<thought>\n{true_thought}\n</thought>\n<tool_call>\n{json.dumps(parsed_tc)}\n</tool_call>"
+                        messages.append({"role": "assistant", "content": mock_content})
+                        continue
+                messages.append(m)
             elif not is_vlm and i == len(history) - 1 and m["role"] == "user":
-                # Inject a forced reminder at the very end
-                safe_content = m["content"] + "\n\n[SYSTEM REMINDER: You MUST use the <thought> and <tool_call> JSON format. Do not answer conversationally. Execute a tool.]"
+                # Inject a forced reminder at the very end matching the model's expected syntax
+                if is_gemma:
+                    safe_content = msg_content + "\n\n[SYSTEM REMINDER: You MUST use the <thought> and <tool_call> JSON format. If you already have enough information to answer, use the `final_answer` tool. Do not answer conversationally.]"
+                else:
+                    safe_content = msg_content + "\n\n[SYSTEM REMINDER: You MUST use the ```json markdown format. If you already have enough information to answer, use the `final_answer` tool immediately. Do not answer conversationally.]"
                 messages.append({"role": "user", "content": safe_content})
             else:
-                messages.append(m)
+                messages.append({"role": m["role"], "content": msg_content})
+
+        # Debug print messages payload
+        print(f"\n[DEBUG] Messages sent to model in Loop {loop_count}:")
+        for m in messages:
+            print(f"  {m['role']}: {repr(m['content'][:300])}...")
+        print("")
 
         if AGENT_STATE["stop_requested"]:
             await ws_send_callback({"type": "error", "message": "Agent execution stopped by user."})
@@ -721,6 +957,54 @@ async def run_agent_loop(
                         raise item
 
                     accumulated += item
+
+                    # Anti-Hallucination: Detect catastrophic repetition loops
+                    # If the model gets stuck generating markdown backticks, spaces, or repeated JSON endlessly, abort early.
+                    if len(accumulated) > 350:
+                        last_300 = accumulated[-300:]
+                        # Find repeating period (require 10 repetitions for small patterns, 3 for larger ones)
+                        for period in range(1, 100):
+                            pattern = last_300[-period:]
+                            if not pattern.strip():
+                                continue
+                            repetitions = 10 if period < 4 else 3
+                            if last_300.endswith(pattern * repetitions):
+                                print(f"[Agent] Repetition loop detected (period={period})! Aborting generation early to prevent UI hang.")
+                                cancel_event.set()
+                                break
+
+                    # Anti-Hallucination: If code models try to write raw markdown blocks (e.g. ```python, ```json)
+                    # directly without thoughts or tool calls, abort early to force correct XML/JSON agent behavior.
+                    stripped_accum = accumulated.strip()
+                    if len(stripped_accum) >= 9 and stripped_accum.startswith("```"):
+                        if not is_gemma and stripped_accum.startswith("```json"):
+                            # This is valid for non-gemma models using markdown
+                            pass
+                        else:
+                            print("[Agent] Raw markdown code block detected at start of generation. Aborting early.")
+                            cancel_event.set()
+
+                    # Anti-Hallucination: Detect context contamination loops of file listings.
+                    # If the model starts listing files (mimicking list_dir output) for 4+ consecutive lines, abort.
+                    lines = accumulated.split('\n')
+                    if len(lines) >= 5:
+                        last_4_lines = lines[-4:]
+                        if all(l.strip().startswith("[FILE]") or l.strip().startswith("[DIR]") for l in last_4_lines if l.strip()):
+                            print("[Agent] File listing loop detected in output. Aborting generation early.")
+                            cancel_event.set()
+
+                    # Anti-Hallucination: Detect 'I am a tool' verbal repetition loops.
+                    verbal_phrases = ["I am a tool", "I am a tool.", "i am a tool", "is not recognized"]
+                    for phrase in verbal_phrases:
+                        if accumulated.count(phrase) >= 5:
+                            print(f"[Agent] Verbal hallucination loop detected: '{phrase}'. Aborting early.")
+                            cancel_event.set()
+                            break
+
+                    # Anti-Hallucination: Detect ls/stat timestamp repetition loops.
+                    if accumulated.count(":0:") >= 20:
+                        print("[Agent] Timestamp repetition loop detected. Aborting early.")
+                        cancel_event.set()
 
                     # Stream thought text in real-time (only the part before tool calls)
                     thought = get_thought_text(accumulated)
@@ -796,11 +1080,31 @@ async def run_agent_loop(
             tool_name = tool_data["tool"]
             tool_args = tool_data.get("args", {})
 
+            # Safety Guard: Validate tool name is a known tool (blocks hallucinated names like 'run_command.json. I am a tool...')
+            VALID_TOOLS = [
+                "list_dir", "read_file", "write_file", "replace_file_content", "run_command", "search_knowledge_bank",
+                "web_search", "web_fetch", "read_file_chunk", "list_knowledge_bank",
+                "grep_search", "invoke_subagent", "send_message", "check_inbox",
+                "final_answer", "wait", "run_sandboxed", "get_secret", "set_secret",
+                "gmail_list_emails", "gmail_read_email", "gmail_delete_email"
+            ]
+            if not tool_name or not isinstance(tool_name, str) or tool_name not in VALID_TOOLS:
+                print(f"[Agent] Invalid/hallucinated tool name '{str(tool_name)[:80]}'. Treating as failure.")
+                consecutive_fails += 1
+                thought = get_thought_text(raw_output) or "Reconsidering approach."
+                history.append({"role": "assistant", "content": f"<thought>\n{thought}\n</thought>"})
+                history.append({"role": "user", "content": f"You specified an invalid tool name. You MUST use ONLY tools from this list: list_dir, read_file, write_file, run_command, search_knowledge_bank, web_search, web_fetch, grep_search, invoke_subagent, send_message, check_inbox, final_answer, wait, run_sandboxed, get_secret, set_secret. Output a valid <tool_call> block now."})
+                continue
+
             # Prevent infinite loops by hard-blocking identical consecutive tool calls
             if tool_name == last_tool_name and json.dumps(tool_args, sort_keys=True) == json.dumps(last_tool_args, sort_keys=True):
-                error_block = "SYSTEM INTERVENTION: You just tried the exact same tool call. You must try a different approach, analyze the previous result, or use final_answer to finish the task."
+                if tool_name == "list_dir":
+                    error_block = "SYSTEM INTERVENTION: You already listed the directory. The listing is shown above. Do NOT call list_dir again. Analyze the files listed above and explain what they are."
+                else:
+                    error_block = "SYSTEM INTERVENTION: You just tried the exact same tool call. You must try a different approach, analyze the previous result, or use final_answer to finish the task."
+                clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Reconstructed action.", is_gemma)
                 print(f"[Agent] Blocked duplicate tool call: {tool_name}")
-                history.append({"role": "assistant", "content": raw_output})
+                history.append({"role": "assistant", "content": clean_assistant_msg})
                 history.append({"role": "user", "content": error_block})
                 continue
 
@@ -813,14 +1117,60 @@ async def run_agent_loop(
                     f"It is not working or is repetitive. You MUST try a different tool, "
                     f"change the arguments, or search/think of another way to solve the issue. Do NOT repeat the same actions."
                 )
+                clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Reconstructed action.", is_gemma)
                 print(f"[Agent] Blocked repetitive tool call: {tool_name} (tried {times_tried} times)")
-                history.append({"role": "assistant", "content": raw_output})
+                history.append({"role": "assistant", "content": clean_assistant_msg})
                 history.append({"role": "user", "content": error_block})
                 continue
 
+            # Smart file-reading loop guard: block reading same file_path more than twice (regardless of line range)
+            if tool_name == "read_file":
+                file_path_arg = tool_args.get("relative_path") or tool_args.get("path") or tool_args.get("file_path", "")
+                file_read_count = sum(
+                    1 for msg in history
+                    if msg.get("role") == "assistant"
+                    for tc in [extract_tool_call(msg.get("content", ""))]
+                    if tc and tc.get("tool") == "read_file"
+                    and (tc.get("args", {}).get("relative_path") or tc.get("args", {}).get("path") or tc.get("args", {}).get("file_path", "")) == file_path_arg
+                )
+                if file_read_count >= 2:
+                    error_block = (
+                        f"SYSTEM INTERVENTION: You have already read the file '{file_path_arg}' {file_read_count} times. "
+                        f"You have enough information from it. Do NOT read it again. "
+                        f"Synthesize what you have learned and use `final_answer` to present your answer to the user NOW."
+                    )
+                    clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Reconstructed action.", is_gemma)
+                    print(f"[Agent] Blocked excessive file reads for: {file_path_arg}")
+                    history.append({"role": "assistant", "content": clean_assistant_msg})
+                    history.append({"role": "user", "content": error_block})
+                    continue
+
+            # Smart knowledge bank loop guard: block same query more than once
+            if tool_name == "search_knowledge_bank":
+                kb_query = tool_args.get("query", "")
+                kb_count = sum(
+                    1 for msg in history
+                    if msg.get("role") == "assistant"
+                    for tc in [extract_tool_call(msg.get("content", ""))]
+                    if tc and tc.get("tool") == "search_knowledge_bank"
+                    and tc.get("args", {}).get("query", "") == kb_query
+                )
+                if kb_count >= 1:
+                    error_block = (
+                        f"SYSTEM INTERVENTION: You already searched the knowledge bank for '{kb_query}'. "
+                        f"The results are shown above. Do NOT search again with the same query. "
+                        f"Use `final_answer` to answer the user based on what you already know."
+                    )
+                    clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Reconstructed action.", is_gemma)
+                    print(f"[Agent] Blocked duplicate knowledge bank query: {kb_query}")
+                    history.append({"role": "assistant", "content": clean_assistant_msg})
+                    history.append({"role": "user", "content": error_block})
+                    continue
+
             if tool_name == "final_answer":
+                clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Reconstructed action.", is_gemma)
                 final_msg = tool_args.get("message", "Task completed.")
-                history.append({"role": "assistant", "content": raw_output})
+                history.append({"role": "assistant", "content": clean_assistant_msg})
                 await ws_send_callback({"type": "final_response", "text": final_msg})
                 if role != "MainAgent" and ACTIVE_WS_CALLBACK:
                     try:
@@ -830,6 +1180,19 @@ async def run_agent_loop(
                 print("[Agent] Done (via final_answer).")
                 # Persistent Memory: save conversation summary before returning
                 save_memory(workspace, user_prompt, final_msg)
+                
+                # Nightly LoRA Data Harvester: Save successful interaction to training data
+                train_data_dir = os.path.join(os.path.dirname(__file__), "..", "training_data")
+                os.makedirs(train_data_dir, exist_ok=True)
+                try:
+                    with open(os.path.join(train_data_dir, "train.jsonl"), "a", encoding="utf-8") as f:
+                        clean_history = [m for m in history if m["role"] in ["user", "assistant"] and "SYSTEM INTERVENTION" not in m["content"]]
+                        if clean_history and clean_history[0]["role"] != "user":
+                            clean_history = [{"role": "user", "content": user_prompt}] + clean_history
+                        f.write(json.dumps({"messages": clean_history}) + "\n")
+                except Exception as e:
+                    print(f"[Agent] Failed to save training data: {e}")
+
                 return
 
             await ws_send_callback({
@@ -955,13 +1318,20 @@ async def run_agent_loop(
             if len(tool_output) > 8000:
                 tool_output = tool_output[:8000] + "\n... [truncated]"
 
-            # Append to history
-            history.append({"role": "assistant", "content": raw_output})
+            # Create a clean representation for the model's history to prevent hallucination cascades
+            # from broken or truncated JSON outputs that were successfully repaired.
+            clean_assistant_msg = format_clean_assistant_msg(raw_output, tool_data, "Executing tool.", is_gemma)
+            history.append({"role": "assistant", "content": clean_assistant_msg})
             
             result_content = f"TOOL RESULT ({tool_name}):\n{tool_output}"
             if is_error:
                 # Inject a system recovery hint with the attempt counter
-                result_content += f"\n\nTOOL FAILED (attempt {consecutive_fails}/3). Analyze the error and try a completely different approach."
+                result_content += (
+                    f"\n\nTOOL FAILED (attempt {consecutive_fails}/3). Analyze the error. "
+                    f"If you are unsure how to fix this error, you MUST use the `web_search` tool "
+                    f"to search the internet, forums, or official documentation to learn the correct solution, "
+                    f"then output a valid <tool_call> block with the corrected parameters to complete the task."
+                )
                 
             history.append({
                 "role": "user",
@@ -1012,10 +1382,10 @@ async def run_agent_loop(
                     summary = "I completed the following steps:\n" + "\n".join(f"- {a}" for a in accomplished[-5:]) if accomplished else "The task could not be completed due to a model generation issue."
                     await ws_send_callback({"type": "final_response", "text": summary})
                     print(f"[Agent] Auto-completed after {consecutive_fails} conversational loop failures.")
-                    save_memory(workspace, user_prompt, summary)
                     return
 
-                history.append({"role": "assistant", "content": raw_output})
+                clean_err_msg = f"<thought>\n{get_thought_text(raw_output) or 'Reviewing approach.'}\n</thought>"
+                history.append({"role": "assistant", "content": clean_err_msg})
 
                 # Attempt 2: Inject a CONCRETE tool call example based on what the model seems to want
                 if consecutive_fails >= 2:
@@ -1040,7 +1410,7 @@ async def run_agent_loop(
                     # Attempt 1: Gentle reminder
                     history.append({
                         "role": "user",
-                        "content": "You output reasoning text but did not execute a tool. You MUST output a <tool_call> block. Example:\n\n<tool_call>\n{\"tool\": \"final_answer\", \"args\": {\"message\": \"Here is my summary...\"}}\n</tool_call>\n\nDo NOT write thoughts. Output ONLY the <tool_call> JSON block."
+                        "content": "You output reasoning text but did not execute a tool. You MUST output a <tool_call> block to take action. If you are trying to edit a file, use the 'replace_file_content' or 'run_command' tools. If you are stuck, use 'run_command' with a bash command to investigate further. Do NOT give up. Output ONLY the <tool_call> JSON block."
                     })
                 continue
 
@@ -1054,12 +1424,19 @@ async def run_agent_loop(
                         "message": "Model couldn't generate a valid response or tool call. Try rephrasing or switching models."
                     })
                     return
-                history.append({"role": "assistant", "content": raw_output})
+                clean_err_msg = f"<thought>\n{get_thought_text(raw_output) or 'Reviewing formatting.'}\n</thought>"
+                history.append({"role": "assistant", "content": clean_err_msg})
                 
-                if "<tool_call>" in raw_output:
-                    history.append({"role": "user", "content": "You included a <tool_call> block, but the content inside was not strictly valid JSON or it was missing the 'tool' or 'args' keys. The exact format must be an object like: {\"tool\": \"run_command\", \"args\": {\"command\": \"ls\"}}. Do not use arrays, and do not add any extra text like 'Running:' inside the block."})
+                if "<tool_call>" in raw_output or "```json" in raw_output:
+                    if is_gemma:
+                        history.append({"role": "user", "content": "You included a tool call block, but the content inside was not strictly valid JSON or it was missing the 'tool' or 'args' keys. The exact format must be an XML block containing a JSON object like:\n<tool_call>\n{\"tool\": \"run_command\", \"args\": {\"command\": \"ls\"}}\n</tool_call>\nDo not use markdown backticks, and do not add any extra text like 'Running:' inside."})
+                    else:
+                        history.append({"role": "user", "content": "You included a tool call block, but the content inside was not strictly valid JSON or it was missing the 'tool' or 'args' keys. The exact format must be a markdown block containing a JSON object like:\n```json\n{\"tool\": \"run_command\", \"args\": {\"command\": \"ls\"}}\n```\nDo not use XML tags, and do not add any extra text like 'Running:' inside."})
                 else:
-                    history.append({"role": "user", "content": "You generated no tool call and no final answer. Please provide a valid <tool_call> block. If you are waiting for subagents, you should call the 'wait' tool: {\"tool\": \"wait\", \"args\": {\"seconds\": 5}}. If you want to check for results, call 'check_inbox'."})
+                    if is_gemma:
+                        history.append({"role": "user", "content": "You generated no tool call and no final answer. Please provide a valid <tool_call> XML block. If you are waiting for subagents, you should call the 'wait' tool: <tool_call>\n{\"tool\": \"wait\", \"args\": {\"seconds\": 5}}\n</tool_call>"})
+                    else:
+                        history.append({"role": "user", "content": "You generated no tool call and no final answer. Please provide a valid ```json markdown block. If you are waiting for subagents, you should call the 'wait' tool: ```json\n{\"tool\": \"wait\", \"args\": {\"seconds\": 5}}\n```"})
                 continue
 
             history.append({"role": "assistant", "content": raw_output})

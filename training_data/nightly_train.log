@@ -1,0 +1,33 @@
+=========================================
+   Nightly MLX LoRA Fine-Tuning
+=========================================
+Copying train data for valid and test...
+Starting MLX LoRA training...
+(This will use 100% of your GPU for a few minutes)
+Calling `python -m mlx_lm.lora...` directly is deprecated. Use `mlx_lm.lora...` or `python -m mlx_lm lora ...` instead.
+Loading pretrained model
+Loading datasets
+Training
+Trainable parameters: 0.111% (10.289M/9241.706M)
+Starting training..., iters: 200
+Iter 1: Val loss 2.709, Val took 14.178s
+=========================================
+ Training Complete! Adapters saved to ./adapters/
+ The agent will automatically load them on next boot.
+=========================================
+=========================================
+   Nightly MLX LoRA Fine-Tuning
+=========================================
+Copying train data for valid and test...
+Starting MLX LoRA training...
+(This will use 100% of your GPU for a few minutes)
+Calling `python -m mlx_lm.lora...` directly is deprecated. Use `mlx_lm.lora...` or `python -m mlx_lm lora ...` instead.
+Loading pretrained model
+Loading datasets
+Training
+Trainable parameters: 0.111% (10.289M/9241.706M)
+Starting training..., iters: 200
+=========================================
+ Training Complete! Adapters saved to ./adapters/
+ The agent will automatically load them on next boot.
+=========================================
