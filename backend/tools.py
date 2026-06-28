@@ -692,7 +692,13 @@ def _subagent_thread_runner(role: str, task: str):
                     response_text += chunk_text
                     
                     # Parse tool call if present in accumulated text
-                    from agent import extract_tool_call
+                    import importlib
+                    try:
+                        import agent as _agent_module
+                        importlib.reload(_agent_module)
+                        extract_tool_call = _agent_module.extract_tool_call
+                    except ImportError:
+                        from agent import extract_tool_call
                     tool_data = extract_tool_call(response_text)
                     if tool_data and "tool" in tool_data:
                         tname = tool_data["tool"]
