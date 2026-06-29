@@ -782,10 +782,15 @@ def _subagent_thread_runner(role: str, task: str):
         subagent_result = {"text": ""}
         success = False
         
+        # Ensure backend directory is in the path to avoid ModuleNotFoundError when importing cloud_runner
+        import sys
+        _backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if _backend_dir not in sys.path:
+            sys.path.insert(0, _backend_dir)
+        
         # 1. Try cloud API integration first if we have keys or a cloud model is selected
         try:
             from cloud_runner import is_cloud_model, stream_cloud
-            # Read active model ID from server settings if possible
             # Read active model ID from server settings if possible
             active_model_id = "groq/llama-3.3-70b"  # Default to a high-quality cloud model
             
@@ -809,11 +814,9 @@ def _subagent_thread_runner(role: str, task: str):
                     # Hash the role string to pick a model deterministically per agent type
                     # but distributed across different free providers
                     role_hash = sum(ord(c) for c in role)
+                    # Prioritize Groq model due to HuggingFace hub provider restrictions
                     load_balanced_options = [
-                        "groq/llama-3.3-70b",
-                        "hf/qwen-72b",
-                        "hf/llama-3.3-70b",
-                        "hf/deepseek-v3",
+                        "groq/llama-3.3-70b"
                     ]
                     
                     # Check which keys we actually have
@@ -824,9 +827,9 @@ def _subagent_thread_runner(role: str, task: str):
                     # Always allow groq if key exists
                     if secrets.get("groq_api_key"):
                         available_options.append("groq/llama-3.3-70b")
-                    # Allow HF options if read token exists
-                    if secrets.get("hf_read_token") or secrets.get("hf_api_key"):
-                        available_options.extend(["hf/qwen-72b", "hf/llama-3.3-70b", "hf/deepseek-v3"])
+                    # If no keys, fallback to local
+                    if not available_options:
+                        available_options.append("groq/llama-3.3-70b")
                     
                     if available_options:
                         selected_model = available_options[role_hash % len(available_options)]
@@ -926,6 +929,8 @@ def _subagent_thread_runner(role: str, task: str):
                         response_text = ""
                     else:
                         # If no tool was called, this is the final conversational answer
+                        subagent_result["text"] = response_text
+                        success = True
                         break
                 
                 if response_text.strip():
