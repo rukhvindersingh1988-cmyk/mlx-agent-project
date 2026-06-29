@@ -841,24 +841,31 @@ def _subagent_thread_runner(role: str, task: str):
                 
             if is_cloud_model(active_model_id):
                 # System prompt teaching subagent tool call format
+                # We align it EXACTLY with the parser's expected tool formatting structure:
+                # <tool_call> {"tool": "tool_name", "args": {"arg1": "val1"}} </tool_call>
                 system_prompt = (
                     f"You are an expert AI Subagent with the role: {role}. You assist the main agent by performing real tasks.\n\n"
                     "You have direct access to the user's local filesystem and terminal.\n"
-                    "To create or write a file, output ONLY this JSON block and nothing else:\n\n"
-                    "```json\n"
+                    "To write or create a file, you MUST output this XML tool call block:\n\n"
+                    "<tool_call>\n"
                     "{\n"
-                    "  \"function\": \"write_file\",\n"
-                    "  \"args\": [\"relative/path/to/file.py\", \"file content here\"]\n"
+                    "  \"tool\": \"write_file\",\n"
+                    "  \"args\": {\n"
+                    "    \"relative_path\": \"relative/path/to/file.py\",\n"
+                    "    \"content\": \"file content here\"\n"
+                    "  }\n"
                     "}\n"
-                    "```\n\n"
+                    "</tool_call>\n\n"
                     "To run a shell command, output:\n\n"
-                    "```json\n"
+                    "<tool_call>\n"
                     "{\n"
-                    "  \"function\": \"run_command\",\n"
-                    "  \"args\": [\"your shell command here\"]\n"
+                    "  \"tool\": \"run_command\",\n"
+                    "  \"args\": {\n"
+                    "    \"command\": \"your shell command here\"\n"
+                    "  }\n"
                     "}\n"
-                    "```\n\n"
-                    "IMPORTANT: Output ONLY the JSON block. No explanations before or after. Execute the task immediately."
+                    "</tool_call>\n\n"
+                    "IMPORTANT: Output ONLY the <tool_call> block. No explanations before or after. Execute the task immediately."
                 )
                 
                 messages = [
