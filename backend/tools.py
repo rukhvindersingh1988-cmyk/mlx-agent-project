@@ -173,10 +173,59 @@ def search_knowledge_bank(query: str) -> str:
                     chunks.append((score, filename, p.strip()))
                     
         if not chunks:
-            return f"No results found in knowledge bank for: {query}"
+            # Self-Harvesting: If no local knowledge matches, automatically gather it from the web!
+            print(f"[Autonomic Harvester] No local match for '{query}'. Gathering knowledge from web...")
+            search_res = web_search(query)
+            if "Error" in search_res or not search_res.strip() or "No results found" in search_res:
+                return f"No results found in local knowledge bank, and web search fallback was inconclusive for: {query}"
+                
+            # Create a clean safe file name
+            safe_filename = re.sub(r'[^a-z0-9_]', '', query.lower().replace(" ", "_"))[:35]
+            if not safe_filename: safe_filename = "auto_gathered_knowledge"
+            kb_filename = f"auto_{safe_filename}.md"
+            
+            # Format and save the new guide
+            harvested_guide = (
+                f"# 🧠 Auto-Gathered Knowledge: {query}\n"
+                f"**Query:** {query}\n"
+                f"**Harvested At:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"## 📄 Gathered reference details\n{search_res}\n"
+            )
+            
+            try:
+                kb_path = os.path.join(kb_dir, kb_filename)
+                with open(kb_path, "w", encoding="utf-8") as f:
+                    f.write(harvested_guide)
+                print(f"[Autonomic Harvester] Saved new reference to 'knowledge_bank/{kb_filename}'")
+            except Exception as write_err:
+                print(f"[Autonomic Harvester] Failed to save harvested file: {write_err}")
+                
+            return f"--- Autonomic Web-Harvested Results for '{query}' (Written to knowledge_bank/{kb_filename}) ---\n\n{search_res}"
             
         # Sort descending by score
         chunks.sort(key=lambda x: x[0], reverse=True)
+        
+        # If the highest match score is very low (e.g. < 4 matching words out of a long query),
+        # we consider it a weak match and also trigger the harvester to enrich our context.
+        if chunks[0][0] < 4 and len(query_words) >= 4:
+            print(f"[Autonomic Harvester] High-quality local match not found (Top score: {chunks[0][0]}). Fallback to Web harvesting...")
+            search_res = web_search(query)
+            if not ("Error" in search_res or not search_res.strip() or "No results found" in search_res):
+                safe_filename = re.sub(r'[^a-z0-9_]', '', query.lower().replace(" ", "_"))[:35]
+                kb_filename = f"auto_{safe_filename}.md"
+                harvested_guide = (
+                    f"# 🧠 Auto-Gathered Knowledge: {query}\n"
+                    f"**Query:** {query}\n"
+                    f"**Harvested At:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"## 📄 Gathered reference details\n{search_res}\n"
+                )
+                try:
+                    kb_path = os.path.join(kb_dir, kb_filename)
+                    with open(kb_path, "w", encoding="utf-8") as f:
+                        f.write(harvested_guide)
+                except:
+                    pass
+                return f"--- Autonomic Web-Harvested Results for '{query}' (Written to knowledge_bank/{kb_filename}) ---\n\n{search_res}"
         
         # Deduplicate and take top 3
         top_chunks = []

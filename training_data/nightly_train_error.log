@@ -90,3 +90,5 @@ Traceback (most recent call last):
   File "/Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/.venv/lib/python3.14/site-packages/transformers/utils/chat_template_utils.py", line 479, in raise_exception
     raise jinja2.exceptions.TemplateError(message)
 jinja2.exceptions.TemplateError: Conversation roles must alternate user/assistant/user/assistant/...
+/bin/bash: /Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/nightly_train.sh: No such file or directory
+/bin/bash: /Users/rukhvinder/.gemini/antigravity/scratch/mlx_agent/nightly_train.sh: No such file or directory
