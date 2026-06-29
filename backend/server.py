@@ -541,7 +541,57 @@ async def websocket_endpoint(websocket: WebSocket):
             # Define helper sender function
             async def ws_sender(packet: dict):
                 await websocket.send_json(packet)
+
+            # Prompt Pre-Processor Optimization Layer:
+            # We translate short/conversational user remarks into rich, instruction-detailed prompts 
+            # using a fast cloud model first, so local models can understand and execute them easily.
+            try:
+                from cloud_runner import stream_cloud, get_secrets
+                secrets = get_secrets()
                 
+                # Check if we have Groq or HF read tokens to handle the fast pre-processing translation
+                translation_model = None
+                if secrets.get("groq_api_key"):
+                    translation_model = "groq/llama-3.3-70b"
+                elif secrets.get("hf_read_token") or secrets.get("hf_api_key"):
+                    translation_model = "hf/llama-3.3-70b"
+                    
+                if translation_model:
+                    print(f"[Prompt Pre-Processor] Translating raw user input: '{prompt[:60]}...'")
+                    await websocket.send_json({
+                        "type": "token", 
+                        "text": "\n\n✨ *[Autonomic Pre-Processor: Translating your remarks into a detailed local agent prompt...]*\n\n"
+                    })
+                    
+                    translation_system = (
+                        "You are a Prompt Optimization Specialist. The user is writing brief remarks to a local AI coding agent running on macOS.\n"
+                        "Your job is to translate their short remark into a detailed, structured, clear instruction prompt that tells the coding agent exactly what to do.\n"
+                        "Ensure the expanded prompt details:\n"
+                        "- Exact goals, directory contexts (recommend placing user code inside 'user_projects/'), and structural files to write.\n"
+                        "- Explicit instructions to use <tool_call> tool format.\n"
+                        "Output ONLY the optimized user prompt. Do NOT include any chat intro, greetings, explanations, or backticks. Just output the clean prompt."
+                    )
+                    
+                    messages = [
+                        {"role": "system", "content": translation_system},
+                        {"role": "user", "content": f"Translate this remark into a detailed agent prompt: '{prompt}'"}
+                    ]
+                    
+                    optimized_prompt = ""
+                    # Stream the generated translation back to the user console in real-time
+                    for token in stream_cloud(translation_model, messages, max_tokens=1024, temperature=0.1):
+                        if not any(err in token for err in ["[ERROR]", "[GROQ", "[HF"]):
+                            optimized_prompt += token
+                            await websocket.send_json({"type": "token", "text": token})
+                            
+                    optimized_prompt = optimized_prompt.strip()
+                    if len(optimized_prompt) > len(prompt) * 0.7:  # Ensure it returned a valid result
+                        print(f"[Prompt Pre-Processor] Optimized prompt generated successfully.")
+                        await websocket.send_json({"type": "token", "text": "\n\n🚀 *[Optimization Complete. Launching Local Agent Loop...]*\n\n"})
+                        prompt = optimized_prompt
+            except Exception as translation_err:
+                print(f"[Prompt Pre-Processor] Translation failed: {translation_err}. Running raw prompt...")
+
             print(f"[WebSocket] User Prompt: '{prompt[:50]}...' using model: {model_id}")
             
             # Start the agent execution loop, passing the incoming queue for steering
